@@ -43,6 +43,26 @@ fn resolve_project_name(name: &Option<String>) -> Result<String> {
     }
 }
 
+/// If the project directory exists and has files but no config, a previous run
+/// must have crashed partway through. Wipe the leftovers so scaffolding can
+/// start fresh. The config-file check in `run()` already ran, so we know
+/// there is no spawn.config.json.
+fn clean_leftover_project_dir(project_dir: &PathBuf) -> Result<()> {
+    if !project_dir.exists() {
+        return Ok(());
+    }
+    let has_contents = project_dir
+        .read_dir()
+        .map(|mut d| d.next().is_some())
+        .unwrap_or(false);
+    if has_contents {
+        ui::warn("Found leftover files from a previous run — cleaning up.");
+        std::fs::remove_dir_all(project_dir)
+            .context("failed to remove leftover project directory")?;
+    }
+    Ok(())
+}
+
 /// --local mode: scaffold only, no cloud wiring.
 fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
     let total = 3;
@@ -56,6 +76,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
 
     // Step 2: Create project directory and scaffold Next.js app
     ui::step(2, total, "Scaffolding Next.js app...");
+    clean_leftover_project_dir(project_dir)?;
     std::fs::create_dir_all(project_dir)?;
     let project_dir_str = project_dir
         .to_str()
@@ -125,6 +146,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
 
     // Step 2: Scaffold Next.js app
     ui::step(2, total, "Scaffolding Next.js app with TypeScript, Tailwind, App Router...");
+    clean_leftover_project_dir(project_dir)?;
     std::fs::create_dir_all(project_dir)?;
     let project_dir_str = project_dir
         .to_str()
