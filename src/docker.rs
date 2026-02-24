@@ -115,9 +115,12 @@ CMD ["bash"]
 }
 
 /// Create and start a container from the base image, mounting the project directory.
-pub fn create_container(project_dir: &str, container_name: &str) -> Result<String> {
+/// The container maps `host_port` to container port 3000.
+/// Returns `(container_id, host_port)`.
+pub fn create_container(project_dir: &str, container_name: &str, host_port: u16) -> Result<(String, u16)> {
+    let port_mapping = format!("{host_port}:3000");
     crate::ui::stream_header(&format!(
-        "docker run -d --name {container_name} -v {project_dir}:/app -p 3000:3000 {BASE_IMAGE} sleep infinity"
+        "docker run -d --name {container_name} -v {project_dir}:/app -p {port_mapping} {BASE_IMAGE} sleep infinity"
     ));
 
     let output = Command::new("docker")
@@ -129,7 +132,7 @@ pub fn create_container(project_dir: &str, container_name: &str) -> Result<Strin
             "-v",
             &format!("{project_dir}:/app"),
             "-p",
-            "3000:3000",
+            &port_mapping,
             "-w",
             "/app",
             BASE_IMAGE,
@@ -145,7 +148,45 @@ pub fn create_container(project_dir: &str, container_name: &str) -> Result<Strin
     }
 
     let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(container_id)
+    Ok((container_id, host_port))
+}
+
+/// Check if a port is available by attempting to bind to it.
+fn port_is_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Try to create a container, falling back to higher ports if the preferred port is taken.
+/// Starts at port 3000 and increments up to 40000.
+/// Returns `(container_id, actual_port)`.
+pub fn create_container_with_fallback(project_dir: &str, container_name: &str) -> Result<(String, u16)> {
+    let mut next_port = 3000u16;
+
+    loop {
+        let port = (next_port..=40000)
+            .find(|p| port_is_available(*p))
+            .ok_or_else(|| anyhow::anyhow!("Could not find an available port in range 3000–40000. Free a port and try again."))?;
+
+        if port != 3000 {
+            crate::ui::warn(&format!("Port 3000 is in use, using {port} instead."));
+        }
+
+        match create_container(project_dir, container_name, port) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                let msg = format!("{e}");
+                if msg.contains("port is already allocated") || msg.contains("address already in use") {
+                    let _ = remove_container(container_name);
+                    next_port = port + 1;
+                    if next_port > 40000 {
+                        bail!("Could not find an available port in range 3000–40000.");
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
 }
 
 /// Execute a command inside a running container, streaming output.

@@ -64,7 +64,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     // Remove any existing container with same name
     docker::remove_container(container_name)?;
 
-    let container_id = docker::create_container(project_dir_str, container_name)?;
+    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
 
     // Scaffold Next.js inside the container
     docker::exec_in_container(
@@ -101,15 +101,17 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         local_only: true,
         container_id: Some(container_id),
         container_name: Some(container_name.to_string()),
+        port: Some(port),
         ..Default::default()
     };
     config.save(project_dir)?;
 
     ui::success(&format!("Project '{project_name}' initialized (local mode)."));
     ui::info("Auth pages work locally. Env vars are placeholders until cloud wiring.");
+    let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
-        ui::hyperlink("http://localhost:3000", "http://localhost:3000")
+        ui::hyperlink(&url, &url)
     ));
 
     ui::next_step(&format!("Run `spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
@@ -140,7 +142,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         .context("project path is not valid UTF-8")?;
 
     docker::remove_container(container_name)?;
-    let container_id = docker::create_container(project_dir_str, container_name)?;
+    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
 
     docker::exec_in_container(
         container_name,
@@ -190,6 +192,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         vercel_project: Some(project_name.to_string()),
         container_id: Some(container_id),
         container_name: Some(container_name.to_string()),
+        port: Some(port),
         ..Default::default()
     };
     config.save(project_dir)?;
@@ -202,9 +205,10 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             &github_repo
         )
     ));
+    let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
-        ui::hyperlink("http://localhost:3000", "http://localhost:3000")
+        ui::hyperlink(&url, &url)
     ));
 
     ui::next_step(&format!(

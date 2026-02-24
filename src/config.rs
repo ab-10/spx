@@ -21,6 +21,8 @@ pub struct SpawnConfig {
     pub container_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 }
 
 impl SpawnConfig {
