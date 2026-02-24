@@ -1,7 +1,31 @@
 use anyhow::{bail, Context, Result};
 use std::process::{Command, Stdio};
 
-const BASE_IMAGE: &str = "spawn-base:latest";
+pub const BASE_IMAGE: &str = "spawn-base:latest";
+
+/// Return the Dockerfile content for the spawn base image.
+pub fn base_dockerfile() -> &'static str {
+    r#"FROM node:20-bookworm
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright system deps and browsers
+RUN npx playwright install --with-deps chromium
+
+# Install Claude Code CLI so `spawn run claude` works out of the box
+RUN npm install -g @anthropic-ai/claude-code
+
+# Set working directory
+WORKDIR /app
+
+# Default command
+CMD ["bash"]
+"#
+}
 
 /// Ensure Docker is available on the system.
 pub fn ensure_docker() -> Result<()> {
@@ -62,29 +86,9 @@ pub fn build_base_image_if_missing() -> Result<()> {
 
     crate::ui::info("Building spawn base Docker image...");
 
-    // Write a temporary Dockerfile for the base image
-    let dockerfile = r#"
-FROM node:20-bookworm
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Playwright system deps and browsers
-RUN npx playwright install --with-deps chromium
-
-# Set working directory
-WORKDIR /app
-
-# Default command
-CMD ["bash"]
-"#;
-
     let tmp_dir = std::env::temp_dir().join("spawn-docker-build");
     std::fs::create_dir_all(&tmp_dir)?;
-    std::fs::write(tmp_dir.join("Dockerfile"), dockerfile)?;
+    std::fs::write(tmp_dir.join("Dockerfile"), base_dockerfile())?;
 
     crate::ui::stream_header("docker build -t spawn-base:latest .");
     let status = Command::new("docker")
@@ -176,16 +180,32 @@ pub fn exec_in_container_output(container_name: &str, cmd: &[&str]) -> Result<St
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// Build the argument list for an interactive `docker exec` invocation.
+///
+/// Exposed publicly so tests can verify the flags without running Docker.
+pub fn exec_interactive_args(container_name: &str, cmd: &[&str]) -> Vec<String> {
+    let mut args = vec![
+        "exec".to_string(),
+        "-i".to_string(),
+        "-t".to_string(),
+        "--user".to_string(),
+        "root".to_string(),
+        container_name.to_string(),
+    ];
+    args.extend(cmd.iter().map(|s| s.to_string()));
+    args
+}
+
 /// Execute an interactive command in the container (attaches TTY).
 pub fn exec_interactive(container_name: &str, cmd: &[&str]) -> Result<()> {
     let display_cmd = cmd.join(" ");
-    crate::ui::stream_header(&format!("docker exec -it {container_name} {display_cmd}"));
+    crate::ui::stream_header(&format!(
+        "docker exec -it --user root {container_name} {display_cmd}"
+    ));
 
+    let args = exec_interactive_args(container_name, cmd);
     let status = Command::new("docker")
-        .arg("exec")
-        .arg("-it")
-        .arg(container_name)
-        .args(cmd)
+        .args(&args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
