@@ -81,6 +81,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             "--import-alias",
             "@/*",
             "--use-npm",
+            "--yes",
         ],
     )?;
 
@@ -88,7 +89,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     ui::step(3, total, "Installing Stack Auth (no-browser mode)...");
     docker::exec_in_container(
         container_name,
-        &["npx", "@stackframe/init-stack", "--no-browser"],
+        &["bash", "-c", "echo '.' | npx @stackframe/init-stack --no-browser"],
     )?;
 
     // Start the dev server in the background
@@ -158,6 +159,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             "--import-alias",
             "@/*",
             "--use-npm",
+            "--yes",
         ],
     )?;
 
@@ -169,7 +171,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     ui::step(4, total, "Installing Stack Auth...");
     docker::exec_in_container(
         container_name,
-        &["npx", "@stackframe/init-stack", "--no-browser"],
+        &["bash", "-c", "echo '.' | npx @stackframe/init-stack --no-browser"],
     )?;
 
     // Step 5: Sync env vars to Vercel
