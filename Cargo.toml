@@ -1,0 +1,19 @@
+[package]
+name = "spawn"
+version = "0.1.0"
+edition = "2024"
+description = "CLI tool that fully sets up a project for agentic development"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+thiserror = "2"
+colored = "3"
+dialoguer = "0.11"
+which = "7"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
