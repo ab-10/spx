@@ -21,9 +21,9 @@ pub fn run(args: InitArgs) -> Result<()> {
     }
 
     if args.local {
-        run_local(&project_name, &project_dir, &container_name)?;
+        run_local(&project_name, &project_dir, &container_name, args.non_interactive)?;
     } else {
-        run_cloud(&project_name, &project_dir, &container_name)?;
+        run_cloud(&project_name, &project_dir, &container_name, args.non_interactive)?;
     }
 
     Ok(())
@@ -44,7 +44,7 @@ fn resolve_project_name(name: &Option<String>) -> Result<String> {
 }
 
 /// --local mode: scaffold only, no cloud wiring.
-fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
+fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
     let total = 4;
 
     // Step 1: Docker image
@@ -114,15 +114,17 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
 
     ui::next_step(&format!("Run `spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
 
-    // Drop into container shell
-    ui::info("Dropping you into the container...");
-    docker::attach_shell(container_name)?;
+    if !non_interactive {
+        // Drop into container shell
+        ui::info("Dropping you into the container...");
+        docker::attach_shell(container_name)?;
+    }
 
     Ok(())
 }
 
 /// Default mode: full cloud-connected setup.
-fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
+fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
     let total = 7;
 
     // Step 1: Docker image
@@ -211,9 +213,11 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         "Run `spawn run claude` to start an agent session."
     ));
 
-    // Drop into container
-    ui::info("Dropping you into the container...");
-    docker::attach_shell(container_name)?;
+    if !non_interactive {
+        // Drop into container
+        ui::info("Dropping you into the container...");
+        docker::attach_shell(container_name)?;
+    }
 
     Ok(())
 }
