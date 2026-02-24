@@ -64,8 +64,8 @@ RUN useradd -m -u 1000 -s /bin/bash claude \
     && usermod -aG sudo claude \
     && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code and create-next-app globally
+RUN npm install -g @anthropic-ai/claude-code create-next-app@latest
 
 # Install Playwright system dependencies
 RUN npx playwright install-deps chromium 2>/dev/null || true
@@ -139,7 +139,7 @@ pub async fn create_container(
     }
 
     let port_mapping = format!("{host_port}:3000");
-    let status = Command::new("docker")
+    let out = Command::new("docker")
         .args([
             "run",
             "-d",
@@ -156,14 +156,17 @@ pub async fn create_container(
             "-f",
             "/dev/null",
         ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .status()
+        .output()
         .await
-        .context("Failed to create container")?;
+        .context("Failed to run `docker run`")?;
 
-    if !status.success() {
-        anyhow::bail!("Failed to create Docker container '{container_name}'");
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!(
+            "Failed to create Docker container '{container_name}'\n\
+             Command: docker run -d --name {container_name} -v {project_dir}:/app -p {port_mapping} {image}\n\
+             {stderr}"
+        );
     }
     Ok(host_port)
 }
@@ -295,6 +298,12 @@ pub async fn start_container(container_name: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Drop into a shell inside the container.
+pub async fn shell(container_name: &str) -> Result<()> {
+    exec_interactive(container_name, &["bash"], None).await
+}
+
 /// Get the base image name.
 pub fn base_image() -> &'static str {
     BASE_IMAGE

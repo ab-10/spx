@@ -184,8 +184,8 @@ async fn scaffold_nextjs(project_name: &str, project_dir: &PathBuf) -> Result<()
             "@/*",
             "--use-npm",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
         .status()
         .await
         .context("Failed to run create-next-app. Is Node.js installed?")?;
