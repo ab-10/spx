@@ -54,10 +54,11 @@ pub async fn run(target: String, json: bool) -> Result<()> {
         println!();
     }
 
-    // Launch Claude Code interactively
+    // Launch Claude Code interactively as non-root user
     let result = docker::exec_interactive(
         container_name,
-        &["npx", "@anthropic-ai/claude-code", "--dangerously-skip-permissions"],
+        &["claude", "--dangerously-skip-permissions"],
+        Some("claude"),
     )
     .await;
 

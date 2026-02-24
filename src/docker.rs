@@ -56,7 +56,16 @@ async fn build_base_image() -> Result<()> {
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (Claude Code requires non-root for --dangerously-skip-permissions)
+RUN useradd -m -u 1000 -s /bin/bash claude \
+    && usermod -aG sudo claude \
+    && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Playwright system dependencies
 RUN npx playwright install-deps chromium 2>/dev/null || true
@@ -225,8 +234,17 @@ pub async fn exec_capture(container_name: &str, cmd: &[&str]) -> Result<String> 
 }
 
 /// Execute an interactive command inside the container (e.g., Claude Code).
-pub async fn exec_interactive(container_name: &str, cmd: &[&str]) -> Result<()> {
-    let mut args = vec!["exec", "-it", container_name];
+pub async fn exec_interactive(
+    container_name: &str,
+    cmd: &[&str],
+    user: Option<&str>,
+) -> Result<()> {
+    let mut args = vec!["exec", "-it"];
+    if let Some(u) = user {
+        args.push("-u");
+        args.push(u);
+    }
+    args.push(container_name);
     args.extend_from_slice(cmd);
 
     let status = Command::new("docker")
@@ -277,12 +295,6 @@ pub async fn start_container(container_name: &str) -> Result<()> {
     }
     Ok(())
 }
-
-/// Drop into a shell inside the container.
-pub async fn shell(container_name: &str) -> Result<()> {
-    exec_interactive(container_name, &["bash"]).await
-}
-
 /// Get the base image name.
 pub fn base_image() -> &'static str {
     BASE_IMAGE
