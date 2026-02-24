@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 const CONFIG_FILE: &str = "spawn.config.json";
 
+fn default_host_port() -> u16 {
+    3000
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpawnConfig {
     /// Project name
@@ -20,6 +24,10 @@ pub struct SpawnConfig {
     /// Docker image used
     #[serde(default)]
     pub docker_image: String,
+
+    /// Host port mapped to container port 3000
+    #[serde(default = "default_host_port")]
+    pub host_port: u16,
 
     /// Vercel project details
     #[serde(default, skip_serializing_if = "Option::is_none")]

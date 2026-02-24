@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::net::TcpListener;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -96,12 +97,23 @@ WORKDIR /app
     Ok(())
 }
 
+/// Find an available host port starting from the given port.
+pub fn find_available_port(start: u16) -> u16 {
+    for port in start..=start + 100 {
+        if TcpListener::bind(("0.0.0.0", port)).is_ok() {
+            return port;
+        }
+    }
+    start
+}
+
 /// Create and start a container for a spawn project.
+/// Returns the host port that was mapped to container port 3000.
 pub async fn create_container(
     container_name: &str,
     project_dir: &str,
     image: &str,
-) -> Result<()> {
+) -> Result<u16> {
     // Remove existing container if any
     let _ = Command::new("docker")
         .args(["rm", "-f", container_name])
@@ -110,6 +122,14 @@ pub async fn create_container(
         .status()
         .await;
 
+    let host_port = find_available_port(3000);
+    if host_port != 3000 {
+        output::warn(&format!(
+            "Port 3000 is in use, using port {host_port} instead."
+        ));
+    }
+
+    let port_mapping = format!("{host_port}:3000");
     let status = Command::new("docker")
         .args([
             "run",
@@ -119,7 +139,7 @@ pub async fn create_container(
             "-v",
             &format!("{project_dir}:/app"),
             "-p",
-            "3000:3000",
+            &port_mapping,
             "-w",
             "/app",
             image,
@@ -136,7 +156,7 @@ pub async fn create_container(
     if !status.success() {
         anyhow::bail!("Failed to create Docker container '{container_name}'");
     }
-    Ok(())
+    Ok(host_port)
 }
 
 /// Execute a command inside the container, streaming output.

@@ -57,7 +57,7 @@ pub async fn run(name: Option<String>, local: bool, json: bool) -> Result<()> {
     if !json {
         output::step(3, total_steps, "Creating Docker container...");
     }
-    docker::create_container(
+    let host_port = docker::create_container(
         &container_name,
         &project_dir.to_string_lossy(),
         docker::base_image(),
@@ -82,6 +82,7 @@ pub async fn run(name: Option<String>, local: bool, json: bool) -> Result<()> {
         cloud_connected: false,
         container_name: container_name.clone(),
         docker_image: docker::base_image().to_string(),
+        host_port,
         vercel: None,
         github: None,
         stack_auth: None,
@@ -135,8 +136,8 @@ pub async fn run(name: Option<String>, local: bool, json: bool) -> Result<()> {
         output::success(&format!(
             "Container: {}",
             output::hyperlink(
-                "http://localhost:3000",
-                &format!("{container_name} → localhost:3000")
+                &format!("http://localhost:{host_port}"),
+                &format!("{container_name} → localhost:{host_port}")
             )
         ));
 

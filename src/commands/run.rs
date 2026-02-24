@@ -45,7 +45,7 @@ pub async fn run(target: String, json: bool) -> Result<()> {
         output::step(2, 2, "Starting Claude Code in dangerous/auto-approve mode...");
         println!();
         output::success("Agent has access to:");
-        println!("  • localhost:3000 — Next.js dev server with hot reload");
+        println!("  • localhost:{} — Next.js dev server with hot reload", config.host_port);
         println!("  • npm test — Playwright suite in /tests");
         println!("  • Full filesystem, git, and Vercel CLI access");
         if config.stack_auth.is_some() {
