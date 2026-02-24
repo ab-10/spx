@@ -133,11 +133,14 @@ fn init_local_end_to_end() {
         "marker file content mismatch inside container"
     );
 
-    // 5. Node.js is available in the container (base image sanity check)
-    let (ok, node_out, _) = run_cmd("docker", &["exec", &container_name, "node", "--version"]);
-    assert!(ok, "node not found in container");
-    assert!(
-        node_out.starts_with('v'),
-        "unexpected node --version output: {node_out}"
+    // 5. `claude` user works inside the container
+    let (ok, whoami_out, whoami_err) = run_cmd(
+        "docker",
+        &["exec", "-u", "claude", &container_name, "whoami"],
+    );
+    assert!(ok, "docker exec -u claude whoami failed: {whoami_err}");
+    assert_eq!(
+        whoami_out, "claude",
+        "expected whoami to return 'claude', got: {whoami_out}"
     );
 }
