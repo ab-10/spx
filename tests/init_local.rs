@@ -8,6 +8,7 @@
 //! built automatically if not present.
 
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// Run a command and return (success, stdout, stderr).
 fn run_cmd(cmd: &str, args: &[&str]) -> (bool, String, String) {
@@ -140,6 +141,92 @@ fn init_local_end_to_end() {
         node_out.starts_with('v'),
         "unexpected node --version output: {node_out}"
     );
+
+    // 6. `spawn run claude` precondition: exec as the claude user must work.
+    //    Replicates the bug where `docker exec -it -u claude <container> claude`
+    //    fails with: "unable to find user claude: no matching entries in passwd file"
+    let (ok, whoami_out, whoami_err) = run_cmd(
+        "docker",
+        &["exec", "-u", "claude", &container_name, "whoami"],
+    );
+    assert!(
+        ok,
+        "docker exec -u claude failed — the claude user does not exist in the container.\n\
+         This is the root cause of `spawn run claude` failing after `spawn init --local`.\n\
+         stderr: {whoami_err}"
+    );
+    assert_eq!(
+        whoami_out, "claude",
+        "Expected whoami to return 'claude', got: {whoami_out}"
+    );
+}
+
+/// After `spawn init --local`, running `spawn run claude` must be able to
+/// exec into the container as the `claude` user. This test replicates the
+/// exact failure:
+///
+///   $ docker exec -it -u claude spawn-<name> claude --dangerously-skip-permissions
+///   Error response from daemon: unable to find user claude: no matching entries in passwd file
+///
+/// The container created by init must use the spawn-base image which includes
+/// the `claude` user via `useradd -m -s /bin/bash claude`.
+#[test]
+fn run_claude_after_init_local() {
+    require_docker();
+
+    let project_name = format!("spawn-test-run-{}", std::process::id());
+    let container_name = format!("spawn-{project_name}");
+    let _guard = ContainerGuard {
+        name: container_name.clone(),
+    };
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
+
+    // Step 1: Run `spawn init --local --non-interactive`
+    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
+    let output = Command::new(spawn_bin)
+        .args(["init", "--local", "--non-interactive", &project_name])
+        .current_dir(tmp_dir.path())
+        .output()
+        .expect("failed to run spawn init");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "spawn init --local failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    // Step 2: Verify the claude user exists in the container.
+    // This is exactly what `spawn run claude` does via docker::exec_interactive.
+    let (ok, stdout, stderr) = run_cmd(
+        "docker",
+        &["exec", "-u", "claude", &container_name, "whoami"],
+    );
+    assert!(
+        ok,
+        "`docker exec -u claude {container_name} whoami` failed.\n\
+         This replicates the `spawn run claude` bug:\n\
+         \"unable to find user claude: no matching entries in passwd file\"\n\
+         stderr: {stderr}"
+    );
+    assert_eq!(stdout, "claude");
+
+    // Step 3: Verify the claude CLI is available (what `spawn run claude` actually invokes).
+    let (ok, which_out, stderr) = run_cmd(
+        "docker",
+        &["exec", "-u", "claude", &container_name, "which", "claude"],
+    );
+    assert!(
+        ok,
+        "claude CLI not found in container when running as claude user.\n\
+         `spawn run claude` invokes `claude --dangerously-skip-permissions` as the claude user.\n\
+         stderr: {stderr}"
+    );
+    assert!(
+        !which_out.is_empty(),
+        "Expected `which claude` to return a path"
+    );
 }
 
 /// Simulate a partial first run that crashes after scaffolding but before
@@ -210,5 +297,68 @@ fn init_local_retry_after_partial_failure() {
     assert!(
         project_dir.join("package.json").exists(),
         "package.json missing after retry"
+    );
+}
+
+/// Verify that `spawn init --local` (without --non-interactive) exits on its
+/// own and does NOT attach to the container shell. Before the fix, the process
+/// would call `docker::attach_shell` and hang waiting for TTY input.
+#[test]
+fn init_local_does_not_attach_to_container() {
+    require_docker();
+
+    let project_name = format!("spawn-test-noattach-{}", std::process::id());
+    let container_name = format!("spawn-{project_name}");
+    let _guard = ContainerGuard {
+        name: container_name.clone(),
+    };
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
+
+    // Run WITHOUT --non-interactive. If attach_shell is called, the child
+    // process will block on stdin and we'll hit the timeout.
+    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
+    let start = Instant::now();
+    let child = Command::new(spawn_bin)
+        .args(["init", "--local", &project_name])
+        .current_dir(tmp_dir.path())
+        // Pipe stdin so attach_shell can't read from our terminal
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn process");
+
+    let output = child
+        .wait_with_output()
+        .expect("failed to wait for spawn process");
+    let elapsed = start.elapsed();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "spawn init --local failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    // The process should exit promptly after setup — not hang on attach_shell.
+    // Real scaffolding takes ~1-2 min; if it took 5+ min, something blocked.
+    assert!(
+        elapsed < Duration::from_secs(300),
+        "process took {elapsed:?} — likely hung on attach_shell"
+    );
+
+    // stdout should NOT contain the "Dropping you into the container" message
+    assert!(
+        !stdout.contains("Dropping you into the container"),
+        "init --local should not drop into the container shell.\nstdout:\n{stdout}"
+    );
+
+    // Config should still be written correctly
+    let project_dir = tmp_dir.path().join(&project_name);
+    assert!(
+        project_dir.join("spawn.config.json").exists(),
+        "spawn.config.json not created"
     );
 }
