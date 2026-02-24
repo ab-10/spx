@@ -28,8 +28,8 @@ This includes:
 ### `spawn init [project-name]`
 
 ```
-spawn init [project-name]           # full setup, cloud-connected (default)
-spawn init [project-name] --local   # local only, no cloud wiring
+spawn init [project-name | default to dir name]           # full setup, cloud-connected (default)
+spawn init [project-name | defaults to dir name] --local   # local only, no cloud wiring
 ```
 
 **Default — cloud-connected:**
