@@ -141,3 +141,74 @@ fn init_local_end_to_end() {
         "unexpected node --version output: {node_out}"
     );
 }
+
+/// Simulate a partial first run that crashes after scaffolding but before
+/// saving config, then verify that a second `spawn init --local` still
+/// succeeds rather than failing because the directory has leftover files.
+///
+/// This replicates the real-world failure where:
+/// 1. First run scaffolds Next.js into the project directory
+/// 2. First run crashes (e.g. Stack Auth fails) before writing spawn.config.json
+/// 3. Second run passes the config-file guard (no config exists)
+/// 4. `create-next-app` refuses to scaffold into the non-empty directory
+#[test]
+fn init_local_retry_after_partial_failure() {
+    require_docker();
+
+    let project_name = format!("spawn-test-retry-{}", std::process::id());
+    let container_name = format!("spawn-{project_name}");
+    let _guard = ContainerGuard {
+        name: container_name.clone(),
+    };
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let project_dir = tmp_dir.path().join(&project_name);
+
+    // --- Simulate a partial first run ---
+    // Create the project directory and plant leftover scaffolding files,
+    // as if create-next-app succeeded but the process died before saving config.
+    std::fs::create_dir_all(&project_dir).expect("failed to create project dir");
+    std::fs::write(project_dir.join("package.json"), r#"{"name":"leftover"}"#)
+        .expect("failed to write package.json");
+    std::fs::create_dir_all(project_dir.join("src")).expect("failed to create src/");
+    std::fs::write(
+        project_dir.join("next.config.ts"),
+        "export default {};",
+    )
+    .expect("failed to write next.config.ts");
+
+    // Crucially, there is NO spawn.config.json — the first run "crashed" before writing it.
+    assert!(
+        !project_dir.join("spawn.config.json").exists(),
+        "setup error: config should not exist yet"
+    );
+
+    // --- Run spawn init --local (the retry) ---
+    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
+    let output = Command::new(spawn_bin)
+        .args(["init", "--local", "--non-interactive", &project_name])
+        .current_dir(tmp_dir.path())
+        .output()
+        .expect("failed to run spawn binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // This is the assertion that currently FAILS — the retry should succeed
+    // but instead create-next-app bails because the directory is non-empty.
+    assert!(
+        output.status.success(),
+        "spawn init --local should recover from a partial previous run, \
+         but it failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    // If/when the fix lands, verify the basics still hold.
+    assert!(
+        project_dir.join("spawn.config.json").exists(),
+        "spawn.config.json not created after retry"
+    );
+    assert!(
+        project_dir.join("package.json").exists(),
+        "package.json missing after retry"
+    );
+}
