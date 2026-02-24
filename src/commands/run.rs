@@ -39,10 +39,11 @@ fn run_claude() -> Result<()> {
     ui::info("  Stack Auth — stackServerApp.getUser() works immediately");
     eprintln!();
 
-    // Launch Claude Code in dangerous/auto-approve mode
+    // Launch Claude Code as the non-root "claude" user in auto-approve mode
     docker::exec_interactive(
         container_name,
         &["claude", "--dangerously-skip-permissions"],
+        Some("claude"),
     )?;
 
     ui::success("Claude Code session ended.");

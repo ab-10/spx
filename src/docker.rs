@@ -70,7 +70,16 @@ FROM node:20-bookworm
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (Claude Code requires non-root for --dangerously-skip-permissions)
+RUN useradd -m -s /bin/bash claude \
+    && usermod -aG sudo claude \
+    && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Playwright system deps and browsers
 RUN npx playwright install --with-deps chromium
@@ -177,15 +186,22 @@ pub fn exec_in_container_output(container_name: &str, cmd: &[&str]) -> Result<St
 }
 
 /// Execute an interactive command in the container (attaches TTY).
-pub fn exec_interactive(container_name: &str, cmd: &[&str]) -> Result<()> {
+/// If `user` is provided, the command runs as that user (`docker exec -u <user>`).
+pub fn exec_interactive(container_name: &str, cmd: &[&str], user: Option<&str>) -> Result<()> {
     let display_cmd = cmd.join(" ");
-    crate::ui::stream_header(&format!("docker exec -it {container_name} {display_cmd}"));
+    let user_flag = user.map(|u| format!(" -u {u}")).unwrap_or_default();
+    crate::ui::stream_header(&format!(
+        "docker exec -it{user_flag} {container_name} {display_cmd}"
+    ));
 
-    let status = Command::new("docker")
-        .arg("exec")
-        .arg("-it")
-        .arg(container_name)
-        .args(cmd)
+    let mut docker_cmd = Command::new("docker");
+    docker_cmd.arg("exec").arg("-it");
+    if let Some(u) = user {
+        docker_cmd.arg("-u").arg(u);
+    }
+    docker_cmd.arg(container_name).args(cmd);
+
+    let status = docker_cmd
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -243,7 +259,7 @@ pub fn container_exists(container_name: &str) -> Result<bool> {
 
 /// Drop the user into the running container with an interactive shell.
 pub fn attach_shell(container_name: &str) -> Result<()> {
-    exec_interactive(container_name, &["bash"])
+    exec_interactive(container_name, &["bash"], None)
 }
 
 /// Stop and remove a container.
