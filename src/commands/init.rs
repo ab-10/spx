@@ -21,7 +21,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     }
 
     if args.local {
-        run_local(&project_name, &project_dir, &container_name, args.non_interactive)?;
+        run_local(&project_name, &project_dir, &container_name)?;
     } else {
         run_cloud(&project_name, &project_dir, &container_name, args.non_interactive)?;
     }
@@ -44,8 +44,8 @@ fn resolve_project_name(name: &Option<String>) -> Result<String> {
 }
 
 /// --local mode: scaffold only, no cloud wiring.
-fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
-    let total = 4;
+fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
+    let total = 3;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -85,18 +85,11 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str, no
         ],
     )?;
 
-    // Step 3: Install Stack Auth
-    ui::step(3, total, "Installing Stack Auth (no-browser mode)...");
-    docker::exec_in_container(
-        container_name,
-        &["bash", "-c", "yes | npx @stackframe/init-stack --no-browser"],
-    )?;
-
     // Start the dev server in the background
     docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
 
-    // Step 4: Save config and drop into container
-    ui::step(4, total, "Saving configuration...");
+    // Step 3: Save config
+    ui::step(3, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
         local_only: true,
@@ -108,7 +101,6 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str, no
     config.save(project_dir)?;
 
     ui::success(&format!("Project '{project_name}' initialized (local mode)."));
-    ui::info("Auth pages work locally. Env vars are placeholders until cloud wiring.");
     let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
@@ -117,18 +109,12 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str, no
 
     ui::next_step(&format!("Run `spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
 
-    if !non_interactive {
-        // Drop into container shell
-        ui::info("Dropping you into the container...");
-        docker::attach_shell(container_name)?;
-    }
-
     Ok(())
 }
 
 /// Default mode: full cloud-connected setup.
 fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
-    let total = 7;
+    let total = 6;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -169,26 +155,19 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
     ui::step(3, total, "Provisioning Vercel Postgres...");
     provision_vercel_postgres(container_name, project_name)?;
 
-    // Step 4: Install Stack Auth
-    ui::step(4, total, "Installing Stack Auth...");
-    docker::exec_in_container(
-        container_name,
-        &["bash", "-c", "yes | npx @stackframe/init-stack --no-browser"],
-    )?;
-
-    // Step 5: Sync env vars to Vercel
-    ui::step(5, total, "Syncing environment variables to Vercel...");
+    // Step 4: Sync env vars to Vercel
+    ui::step(4, total, "Syncing environment variables to Vercel...");
     sync_env_to_vercel(container_name)?;
 
-    // Step 6: Create GitHub repo and link to Vercel
-    ui::step(6, total, "Creating GitHub repo and linking to Vercel...");
+    // Step 5: Create GitHub repo and link to Vercel
+    ui::step(5, total, "Creating GitHub repo and linking to Vercel...");
     let github_repo = setup_github_and_vercel(container_name, project_name)?;
 
     // Start the dev server in the background
     docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
 
-    // Step 7: Save config
-    ui::step(7, total, "Saving configuration...");
+    // Step 6: Save config
+    ui::step(6, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
         local_only: false,

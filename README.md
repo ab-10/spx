@@ -51,7 +51,7 @@ spawn init [project-name | defaults to dir name] --local   # local only, no clou
 1. Pulls spawn base Docker image.
 2. Scaffolds Next.js app.
 3. Installs Stack Auth in no-browser mode — auth pages work locally, env vars are placeholders.
-4. Drops you into the running container.
+4. Starts the dev server and exits.
 
 No database, no Vercel project, no GitHub repo — yet.
 Cloud wiring runs automatically on the first `spawn deploy` or `spawn preview` call.
