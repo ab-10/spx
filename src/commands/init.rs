@@ -158,12 +158,6 @@ pub async fn run(name: Option<String>, local: bool, json: bool) -> Result<()> {
 
     output::json_output(json, &result);
 
-    // Drop into the container shell
-    if !json {
-        output::header("Dropping you into the container...");
-        docker::shell(&container_name).await?;
-    }
-
     Ok(())
 }
 
