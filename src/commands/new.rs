@@ -92,9 +92,6 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         ],
     )?;
 
-    // Start the dev server in the background
-    docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
-
     // Step 3: Save config
     ui::step(3, total, "Saving configuration...");
     let config = SpawnConfig {
@@ -108,13 +105,8 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     config.save(project_dir)?;
 
     ui::success(&format!("Project '{project_name}' created (local mode)."));
-    let url = format!("http://localhost:{port}");
-    ui::info(&format!(
-        "Dev server: {}",
-        ui::hyperlink(&url, &url)
-    ));
 
-    ui::next_step(&format!("Run `cd {project_name} && spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
+    ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
 
     Ok(())
 }
@@ -171,9 +163,6 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
     ui::step(5, total, "Creating GitHub repo and linking to Vercel...");
     let github_repo = setup_github_and_vercel(container_name, project_name)?;
 
-    // Start the dev server in the background
-    docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
-
     // Step 6: Save config
     ui::step(6, total, "Saving configuration...");
     let config = SpawnConfig {
@@ -196,14 +185,8 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
             &github_repo
         )
     ));
-    let url = format!("http://localhost:{port}");
-    ui::info(&format!(
-        "Dev server: {}",
-        ui::hyperlink(&url, &url)
-    ));
-
     ui::next_step(&format!(
-        "Run `cd {project_name} && spawn run claude` to start an agent session."
+        "Run `cd {project_name} && spawn claude` to start an agent session."
     ));
 
     if !non_interactive {

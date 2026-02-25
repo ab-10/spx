@@ -142,7 +142,7 @@ fn new_local_end_to_end() {
         "unexpected node --version output: {node_out}"
     );
 
-    // 6. `spawn run claude` precondition: exec as the claude user must work.
+    // 6. `spawn claude` precondition: exec as the claude user must work.
     //    Replicates the bug where `docker exec -it -u claude <container> claude`
     //    fails with: "unable to find user claude: no matching entries in passwd file"
     let (ok, whoami_out, whoami_err) = run_cmd(
@@ -152,7 +152,7 @@ fn new_local_end_to_end() {
     assert!(
         ok,
         "docker exec -u claude failed — the claude user does not exist in the container.\n\
-         This is the root cause of `spawn run claude` failing after `spawn new --local`.\n\
+         This is the root cause of `spawn claude` failing after `spawn new --local`.\n\
          stderr: {whoami_err}"
     );
     assert_eq!(
@@ -161,7 +161,7 @@ fn new_local_end_to_end() {
     );
 }
 
-/// After `spawn new --local`, running `spawn run claude` must be able to
+/// After `spawn new --local`, running `spawn claude` must be able to
 /// exec into the container as the `claude` user. This test replicates the
 /// exact failure:
 ///
@@ -198,7 +198,7 @@ fn run_claude_after_new_local() {
     );
 
     // Step 2: Verify the claude user exists in the container.
-    // This is exactly what `spawn run claude` does via docker::exec_interactive.
+    // This is exactly what `spawn claude` does via docker::exec_interactive.
     let (ok, stdout, stderr) = run_cmd(
         "docker",
         &["exec", "-u", "claude", &container_name, "whoami"],
@@ -206,13 +206,13 @@ fn run_claude_after_new_local() {
     assert!(
         ok,
         "`docker exec -u claude {container_name} whoami` failed.\n\
-         This replicates the `spawn run claude` bug:\n\
+         This replicates the `spawn claude` bug:\n\
          \"unable to find user claude: no matching entries in passwd file\"\n\
          stderr: {stderr}"
     );
     assert_eq!(stdout, "claude");
 
-    // Step 3: Verify the claude CLI is available (what `spawn run claude` actually invokes).
+    // Step 3: Verify the claude CLI is available (what `spawn claude` actually invokes).
     let (ok, which_out, stderr) = run_cmd(
         "docker",
         &["exec", "-u", "claude", &container_name, "which", "claude"],
@@ -220,7 +220,7 @@ fn run_claude_after_new_local() {
     assert!(
         ok,
         "claude CLI not found in container when running as claude user.\n\
-         `spawn run claude` invokes `claude --dangerously-skip-permissions` as the claude user.\n\
+         `spawn claude` invokes `claude --dangerously-skip-permissions` as the claude user.\n\
          stderr: {stderr}"
     );
     assert!(
