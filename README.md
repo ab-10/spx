@@ -1,9 +1,7 @@
 # spawn
 
-`spawn` is a CLI command that fully sets up a project for agentic development.
-This includes:
-1. Initializing local sandboxed dev environment with strong agent feedback loops.
-2. Deployment environment that's consistent with the development environment.
+`spawn` sets up Docker container with an opinionated NextJS webapp setup and a container.
+This allows you to execute Claude Code (w/ `--dangerously-skip-permissions`) and provide the agent with good feedback loops.
 
 
 ## Quickstart
