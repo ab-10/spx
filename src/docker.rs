@@ -70,7 +70,16 @@ FROM node:20-bookworm
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (Claude Code requires non-root for --dangerously-skip-permissions)
+RUN useradd -m -s /bin/bash claude \
+    && usermod -aG sudo claude \
+    && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Playwright system deps and browsers
 RUN npx playwright install --with-deps chromium
@@ -106,9 +115,12 @@ CMD ["bash"]
 }
 
 /// Create and start a container from the base image, mounting the project directory.
-pub fn create_container(project_dir: &str, container_name: &str) -> Result<String> {
+/// The container maps `host_port` to container port 3000.
+/// Returns `(container_id, host_port)`.
+pub fn create_container(project_dir: &str, container_name: &str, host_port: u16) -> Result<(String, u16)> {
+    let port_mapping = format!("{host_port}:3000");
     crate::ui::stream_header(&format!(
-        "docker run -d --name {container_name} -v {project_dir}:/app -p 3000:3000 {BASE_IMAGE} sleep infinity"
+        "docker run -d --name {container_name} -v {project_dir}:/app -p {port_mapping} {BASE_IMAGE} sleep infinity"
     ));
 
     let output = Command::new("docker")
@@ -120,7 +132,7 @@ pub fn create_container(project_dir: &str, container_name: &str) -> Result<Strin
             "-v",
             &format!("{project_dir}:/app"),
             "-p",
-            "3000:3000",
+            &port_mapping,
             "-w",
             "/app",
             BASE_IMAGE,
@@ -136,7 +148,45 @@ pub fn create_container(project_dir: &str, container_name: &str) -> Result<Strin
     }
 
     let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(container_id)
+    Ok((container_id, host_port))
+}
+
+/// Check if a port is available by attempting to bind to it.
+fn port_is_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Try to create a container, falling back to higher ports if the preferred port is taken.
+/// Starts at port 3000 and increments up to 40000.
+/// Returns `(container_id, actual_port)`.
+pub fn create_container_with_fallback(project_dir: &str, container_name: &str) -> Result<(String, u16)> {
+    let mut next_port = 3000u16;
+
+    loop {
+        let port = (next_port..=40000)
+            .find(|p| port_is_available(*p))
+            .ok_or_else(|| anyhow::anyhow!("Could not find an available port in range 3000–40000. Free a port and try again."))?;
+
+        if port != 3000 {
+            crate::ui::warn(&format!("Port 3000 is in use, using {port} instead."));
+        }
+
+        match create_container(project_dir, container_name, port) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                let msg = format!("{e}");
+                if msg.contains("port is already allocated") || msg.contains("address already in use") {
+                    let _ = remove_container(container_name);
+                    next_port = port + 1;
+                    if next_port > 40000 {
+                        bail!("Could not find an available port in range 3000–40000.");
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
 }
 
 /// Execute a command inside a running container, streaming output.
@@ -177,15 +227,22 @@ pub fn exec_in_container_output(container_name: &str, cmd: &[&str]) -> Result<St
 }
 
 /// Execute an interactive command in the container (attaches TTY).
-pub fn exec_interactive(container_name: &str, cmd: &[&str]) -> Result<()> {
+/// If `user` is provided, the command runs as that user (`docker exec -u <user>`).
+pub fn exec_interactive(container_name: &str, cmd: &[&str], user: Option<&str>) -> Result<()> {
     let display_cmd = cmd.join(" ");
-    crate::ui::stream_header(&format!("docker exec -it {container_name} {display_cmd}"));
+    let user_flag = user.map(|u| format!(" -u {u}")).unwrap_or_default();
+    crate::ui::stream_header(&format!(
+        "docker exec -it{user_flag} {container_name} {display_cmd}"
+    ));
 
-    let status = Command::new("docker")
-        .arg("exec")
-        .arg("-it")
-        .arg(container_name)
-        .args(cmd)
+    let mut docker_cmd = Command::new("docker");
+    docker_cmd.arg("exec").arg("-it");
+    if let Some(u) = user {
+        docker_cmd.arg("-u").arg(u);
+    }
+    docker_cmd.arg(container_name).args(cmd);
+
+    let status = docker_cmd
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -243,7 +300,7 @@ pub fn container_exists(container_name: &str) -> Result<bool> {
 
 /// Drop the user into the running container with an interactive shell.
 pub fn attach_shell(container_name: &str) -> Result<()> {
-    exec_interactive(container_name, &["bash"])
+    exec_interactive(container_name, &["bash"], None)
 }
 
 /// Stop and remove a container.

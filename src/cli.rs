@@ -33,6 +33,10 @@ pub struct InitArgs {
     #[arg(long)]
     pub local: bool,
 
+    /// Skip interactive prompts and the shell drop-in at the end (for CI/scripting)
+    #[arg(long)]
+    pub non_interactive: bool,
+
     /// Output as JSON
     #[arg(long)]
     pub json: bool,

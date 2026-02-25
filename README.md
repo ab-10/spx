@@ -51,10 +51,15 @@ spawn init [project-name | defaults to dir name] --local   # local only, no clou
 1. Pulls spawn base Docker image.
 2. Scaffolds Next.js app.
 3. Installs Stack Auth in no-browser mode — auth pages work locally, env vars are placeholders.
-4. Drops you into the running container.
+4. Starts the dev server and exits.
 
 No database, no Vercel project, no GitHub repo — yet.
 Cloud wiring runs automatically on the first `spawn deploy` or `spawn preview` call.
+
+Port discovery:
+1. Defaults to `3000`
+2. Keep incrementing to find the right port (up to `40000`)
+3. Display appropriate connection URL for port found
 
 ### `spawn run claude`
 
@@ -120,6 +125,20 @@ This is the only time spawn asks a question after init.
 3. Every URL should be clickable in modern terminals (OSC 8 hyperlinks).
 4. The agent's actions should stream in real time — hiding them in a spinner creates anxiety; showing them builds trust.
 5. `--json` flag on everything for scripting and editor integrations.
+
+## Testing
+
+Tests should give the same confidence as running the real command manually. That means:
+
+- Integration tests run the actual `spawn` binary against real Docker — no mocks, no duplicate Dockerfiles.
+- Docker must be running. Tests fail fast with a clear message if it isn't.
+- We verify side effects of the real flow (config files on disk, container state, bind mounts, user permissions) rather than unit-testing internal functions against synthetic fixtures.
+- Network dependencies (npm registry, etc.) are accepted. A flaky network is a real failure mode worth knowing about.
+- Tests are slow (~1-2 min for npm scaffolding) and that's fine — they reproduce the actual user experience.
+
+```bash
+cargo test --test init_local    # requires Docker
+```
 
 ## Reflect on
 

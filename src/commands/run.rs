@@ -18,31 +18,33 @@ pub fn run(args: RunArgs) -> Result<()> {
 
 fn run_claude() -> Result<()> {
     let cwd = env::current_dir()?;
-    let config = SpawnConfig::load(&cwd)?;
-    let fallback_name = format!("spawn-{}", config.project_name);
+    let mut config = SpawnConfig::load(&cwd)?;
     let container_name = config
         .container_name
-        .as_deref()
-        .unwrap_or(&fallback_name);
+        .clone()
+        .unwrap_or_else(|| format!("spawn-{}", config.project_name));
 
     // Ensure the container is running
-    ensure_container_running(container_name, &config)?;
+    ensure_container_running(&container_name, &mut config, &cwd)?;
 
+    let port = config.port.unwrap_or(3000);
+    let url = format!("http://localhost:{port}");
     ui::info("Launching Claude Code session inside the container...");
     ui::info("The agent has access to:");
     ui::info(&format!(
         "  {} — Next.js dev server with hot reload",
-        ui::hyperlink("http://localhost:3000", "localhost:3000")
+        ui::hyperlink(&url, &format!("localhost:{port}"))
     ));
     ui::info("  npm test — pre-configured Playwright suite");
     ui::info("  Full filesystem, git, and Vercel CLI access");
     ui::info("  Stack Auth — stackServerApp.getUser() works immediately");
     eprintln!();
 
-    // Launch Claude Code in dangerous/auto-approve mode
+    // Launch Claude Code as the non-root "claude" user in auto-approve mode
     docker::exec_interactive(
-        container_name,
+        &container_name,
         &["claude", "--dangerously-skip-permissions"],
+        Some("claude"),
     )?;
 
     ui::success("Claude Code session ended.");
@@ -52,7 +54,7 @@ fn run_claude() -> Result<()> {
     Ok(())
 }
 
-fn ensure_container_running(container_name: &str, _config: &SpawnConfig) -> Result<()> {
+fn ensure_container_running(container_name: &str, config: &mut SpawnConfig, cwd: &std::path::Path) -> Result<()> {
     if docker::container_is_running(container_name)? {
         return Ok(());
     }
@@ -67,12 +69,13 @@ fn ensure_container_running(container_name: &str, _config: &SpawnConfig) -> Resu
 
     // Container doesn't exist — recreate it
     ui::warn("Container not found. Recreating...");
-    let cwd = env::current_dir()?;
     let project_dir = cwd
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("project path is not valid UTF-8"))?;
 
-    docker::create_container(project_dir, container_name)?;
+    let (_container_id, port) = docker::create_container_with_fallback(project_dir, container_name)?;
+    config.port = Some(port);
+    config.save(cwd)?;
     // Restart the dev server
     let _ = docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"]);
 

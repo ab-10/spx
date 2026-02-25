@@ -23,7 +23,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     if args.local {
         run_local(&project_name, &project_dir, &container_name)?;
     } else {
-        run_cloud(&project_name, &project_dir, &container_name)?;
+        run_cloud(&project_name, &project_dir, &container_name, args.non_interactive)?;
     }
 
     Ok(())
@@ -43,9 +43,29 @@ fn resolve_project_name(name: &Option<String>) -> Result<String> {
     }
 }
 
+/// If the project directory exists and has files but no config, a previous run
+/// must have crashed partway through. Wipe the leftovers so scaffolding can
+/// start fresh. The config-file check in `run()` already ran, so we know
+/// there is no spawn.config.json.
+fn clean_leftover_project_dir(project_dir: &PathBuf) -> Result<()> {
+    if !project_dir.exists() {
+        return Ok(());
+    }
+    let has_contents = project_dir
+        .read_dir()
+        .map(|mut d| d.next().is_some())
+        .unwrap_or(false);
+    if has_contents {
+        ui::warn("Found leftover files from a previous run — cleaning up.");
+        std::fs::remove_dir_all(project_dir)
+            .context("failed to remove leftover project directory")?;
+    }
+    Ok(())
+}
+
 /// --local mode: scaffold only, no cloud wiring.
 fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
-    let total = 4;
+    let total = 3;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -56,6 +76,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
 
     // Step 2: Create project directory and scaffold Next.js app
     ui::step(2, total, "Scaffolding Next.js app...");
+    clean_leftover_project_dir(project_dir)?;
     std::fs::create_dir_all(project_dir)?;
     let project_dir_str = project_dir
         .to_str()
@@ -64,7 +85,7 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     // Remove any existing container with same name
     docker::remove_container(container_name)?;
 
-    let container_id = docker::create_container(project_dir_str, container_name)?;
+    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
 
     // Scaffold Next.js inside the container
     docker::exec_in_container(
@@ -81,49 +102,40 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             "--import-alias",
             "@/*",
             "--use-npm",
+            "--yes",
         ],
-    )?;
-
-    // Step 3: Install Stack Auth
-    ui::step(3, total, "Installing Stack Auth (no-browser mode)...");
-    docker::exec_in_container(
-        container_name,
-        &["npx", "@stackframe/init-stack", "--no-browser"],
     )?;
 
     // Start the dev server in the background
     docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
 
-    // Step 4: Save config and drop into container
-    ui::step(4, total, "Saving configuration...");
+    // Step 3: Save config
+    ui::step(3, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
         local_only: true,
         container_id: Some(container_id),
         container_name: Some(container_name.to_string()),
+        port: Some(port),
         ..Default::default()
     };
     config.save(project_dir)?;
 
     ui::success(&format!("Project '{project_name}' initialized (local mode)."));
-    ui::info("Auth pages work locally. Env vars are placeholders until cloud wiring.");
+    let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
-        ui::hyperlink("http://localhost:3000", "http://localhost:3000")
+        ui::hyperlink(&url, &url)
     ));
 
     ui::next_step(&format!("Run `spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
-
-    // Drop into container shell
-    ui::info("Dropping you into the container...");
-    docker::attach_shell(container_name)?;
 
     Ok(())
 }
 
 /// Default mode: full cloud-connected setup.
-fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
-    let total = 7;
+fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
+    let total = 6;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -134,13 +146,14 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
 
     // Step 2: Scaffold Next.js app
     ui::step(2, total, "Scaffolding Next.js app with TypeScript, Tailwind, App Router...");
+    clean_leftover_project_dir(project_dir)?;
     std::fs::create_dir_all(project_dir)?;
     let project_dir_str = project_dir
         .to_str()
         .context("project path is not valid UTF-8")?;
 
     docker::remove_container(container_name)?;
-    let container_id = docker::create_container(project_dir_str, container_name)?;
+    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
 
     docker::exec_in_container(
         container_name,
@@ -156,6 +169,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             "--import-alias",
             "@/*",
             "--use-npm",
+            "--yes",
         ],
     )?;
 
@@ -163,26 +177,19 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     ui::step(3, total, "Provisioning Vercel Postgres...");
     provision_vercel_postgres(container_name, project_name)?;
 
-    // Step 4: Install Stack Auth
-    ui::step(4, total, "Installing Stack Auth...");
-    docker::exec_in_container(
-        container_name,
-        &["npx", "@stackframe/init-stack", "--no-browser"],
-    )?;
-
-    // Step 5: Sync env vars to Vercel
-    ui::step(5, total, "Syncing environment variables to Vercel...");
+    // Step 4: Sync env vars to Vercel
+    ui::step(4, total, "Syncing environment variables to Vercel...");
     sync_env_to_vercel(container_name)?;
 
-    // Step 6: Create GitHub repo and link to Vercel
-    ui::step(6, total, "Creating GitHub repo and linking to Vercel...");
+    // Step 5: Create GitHub repo and link to Vercel
+    ui::step(5, total, "Creating GitHub repo and linking to Vercel...");
     let github_repo = setup_github_and_vercel(container_name, project_name)?;
 
     // Start the dev server in the background
     docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"])?;
 
-    // Step 7: Save config
-    ui::step(7, total, "Saving configuration...");
+    // Step 6: Save config
+    ui::step(6, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
         local_only: false,
@@ -190,6 +197,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
         vercel_project: Some(project_name.to_string()),
         container_id: Some(container_id),
         container_name: Some(container_name.to_string()),
+        port: Some(port),
         ..Default::default()
     };
     config.save(project_dir)?;
@@ -202,18 +210,21 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
             &github_repo
         )
     ));
+    let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
-        ui::hyperlink("http://localhost:3000", "http://localhost:3000")
+        ui::hyperlink(&url, &url)
     ));
 
     ui::next_step(&format!(
         "Run `spawn run claude` to start an agent session."
     ));
 
-    // Drop into container
-    ui::info("Dropping you into the container...");
-    docker::attach_shell(container_name)?;
+    if !non_interactive {
+        // Drop into container
+        ui::info("Dropping you into the container...");
+        docker::attach_shell(container_name)?;
+    }
 
     Ok(())
 }
