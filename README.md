@@ -1,7 +1,7 @@
 # spawn
 
-`spawn` sets up Docker container with an opinionated NextJS webapp setup and a container.
-This allows you to execute Claude Code (w/ `--dangerously-skip-permissions`) and provide the agent with good feedback loops.
+`spawn` sets up Docker container with an opinionated NextJS webapp setup.
+This allows you to build with Claude Code (w/ `--dangerously-skip-permissions`) out of the box, with good feedback loops.
 
 
 ## Quickstart
