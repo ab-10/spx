@@ -30,7 +30,7 @@ fn run_claude() -> Result<()> {
     ensure_container_running(&container_name, &mut config, &cwd)?;
 
     let host_port = config.port
-        .ok_or_else(|| anyhow::anyhow!("No port configured. Re-run `spawn init` to fix."))?;
+        .ok_or_else(|| anyhow::anyhow!("No port configured. Re-run `spawn new` to fix."))?;
     let url = format!("http://localhost:{host_port}");
     ui::info("Launching Claude Code session inside the container...");
     ui::info("The agent has access to:");

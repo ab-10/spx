@@ -14,8 +14,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Full setup — container, DB, auth, GitHub, Vercel
-    Init(InitArgs),
+    /// Create a new project — container, scaffold, optional cloud wiring
+    New(NewArgs),
     /// Run a tool inside the container
     Run(RunArgs),
     /// Shareable Vercel preview URL from current working state
@@ -25,9 +25,9 @@ pub enum Command {
 }
 
 #[derive(Parser)]
-pub struct InitArgs {
-    /// Project name (defaults to current directory name)
-    pub name: Option<String>,
+pub struct NewArgs {
+    /// Project name
+    pub name: String,
 
     /// Local scaffold only — cloud wiring deferred to first deploy/preview
     #[arg(long)]

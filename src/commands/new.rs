@@ -2,45 +2,31 @@ use anyhow::{bail, Context, Result};
 use std::env;
 use std::path::PathBuf;
 
-use crate::cli::InitArgs;
+use crate::cli::NewArgs;
 use crate::config::SpawnConfig;
 use crate::docker;
 use crate::ui;
 
-pub fn run(args: InitArgs) -> Result<()> {
-    let project_name = resolve_project_name(&args.name)?;
-    let project_dir = env::current_dir()?.join(&project_name);
+pub fn run(args: NewArgs) -> Result<()> {
+    let project_name = &args.name;
+    let project_dir = env::current_dir()?.join(project_name);
     let container_name = format!("spawn-{project_name}");
 
     if SpawnConfig::exists(&project_dir) {
         bail!(
-            "Project '{}' already initialized. Config found at {}",
+            "Project '{}' already exists. Config found at {}",
             project_name,
             SpawnConfig::path(&project_dir).display()
         );
     }
 
     if args.local {
-        run_local(&project_name, &project_dir, &container_name)?;
+        run_local(project_name, &project_dir, &container_name)?;
     } else {
-        run_cloud(&project_name, &project_dir, &container_name, args.non_interactive)?;
+        run_cloud(project_name, &project_dir, &container_name, args.non_interactive)?;
     }
 
     Ok(())
-}
-
-/// Resolve the project name: use the provided name or fall back to the current directory name.
-fn resolve_project_name(name: &Option<String>) -> Result<String> {
-    match name {
-        Some(n) => Ok(n.clone()),
-        None => {
-            let cwd = env::current_dir()?;
-            cwd.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-                .context("could not determine project name from current directory")
-        }
-    }
 }
 
 /// If the project directory exists and has files but no config, a previous run
@@ -121,14 +107,14 @@ fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) ->
     };
     config.save(project_dir)?;
 
-    ui::success(&format!("Project '{project_name}' initialized (local mode)."));
+    ui::success(&format!("Project '{project_name}' created (local mode)."));
     let url = format!("http://localhost:{port}");
     ui::info(&format!(
         "Dev server: {}",
         ui::hyperlink(&url, &url)
     ));
 
-    ui::next_step(&format!("Run `spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
+    ui::next_step(&format!("Run `cd {project_name} && spawn run claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
 
     Ok(())
 }
@@ -202,7 +188,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
     };
     config.save(project_dir)?;
 
-    ui::success(&format!("Project '{project_name}' fully initialized."));
+    ui::success(&format!("Project '{project_name}' created."));
     ui::info(&format!(
         "GitHub: {}",
         ui::hyperlink(
@@ -217,7 +203,7 @@ fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, no
     ));
 
     ui::next_step(&format!(
-        "Run `spawn run claude` to start an agent session."
+        "Run `cd {project_name} && spawn run claude` to start an agent session."
     ));
 
     if !non_interactive {
@@ -314,7 +300,7 @@ fn setup_github_and_vercel(container_name: &str, project_name: &str) -> Result<S
     docker::exec_in_container(container_name, &["git", "add", "-A"])?;
     docker::exec_in_container(
         container_name,
-        &["git", "commit", "-m", "Initial commit via spawn init"],
+        &["git", "commit", "-m", "Initial commit via spawn new"],
     )?;
 
     // Create GitHub repo via gh CLI

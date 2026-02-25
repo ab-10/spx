@@ -25,11 +25,11 @@ This includes:
 
 ## Usage
 
-### `spawn init [project-name]`
+### `spawn new [project-name]`
 
 ```
-spawn init [project-name | default to dir name]           # full setup, cloud-connected (default)
-spawn init [project-name | defaults to dir name] --local   # local only, no cloud wiring
+spawn new [project-name | default to dir name]           # full setup, cloud-connected (default)
+spawn new [project-name | defaults to dir name] --local   # local only, no cloud wiring
 ```
 
 **Default — cloud-connected:**
@@ -104,14 +104,14 @@ spawn deploy --force   # skip test gate
 4. Prints the production URL.
 
 If initialized with `--local`: detects missing cloud wiring via `spawn.config.json`, prompts once ("This project isn't connected to the cloud yet. Connect now? [Y/n]"), provisions Vercel Postgres + Stack Auth + GitHub + Vercel, then proceeds with deploy.
-This is the only time spawn asks a question after init.
+This is the only time spawn asks a question after project creation.
 
 ## Command Reference
 
 | Command | What it does |
 |---|---|
-| `spawn init [name]` | Full setup — container, DB, auth, GitHub, Vercel |
-| `spawn init [name] --local` | Local scaffold only — cloud wiring deferred to first deploy |
+| `spawn new [name]` | Full setup — container, DB, auth, GitHub, Vercel |
+| `spawn new [name] --local` | Local scaffold only — cloud wiring deferred to first deploy |
 | `spawn run claude` | Interactive Claude Code session inside the container |
 | `spawn preview` | Shareable Vercel preview URL from current working state |
 | `spawn preview --close` | Tears down the preview deployment |
@@ -137,14 +137,14 @@ Tests should give the same confidence as running the real command manually. That
 - Tests are slow (~1-2 min for npm scaffolding) and that's fine — they reproduce the actual user experience.
 
 ```bash
-cargo test --test init_local    # requires Docker
+cargo test --test new_local    # requires Docker
 ```
 
 ## Reflect on
 
 - [ ] What are the limitations of using Vercel for deployment?
     At which stage do I need a direct interface with GCP?
-- [ ] `spawn init` vs `spawn init --local` flags.
+- [ ] `spawn new` vs `spawn new --local` flags.
     What's the cost of connecting deployment at `init`?
     Implement both ways and A/B test.
 - [ ] What's a good mechanism for implementing agent tools inside of the spawn environment?
