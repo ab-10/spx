@@ -1,7 +1,5 @@
 pub mod claude;
-pub mod deploy;
 pub mod new;
-pub mod preview;
 pub mod shell;
 
 use anyhow::Result;
