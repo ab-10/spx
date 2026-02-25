@@ -13,8 +13,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::New(args) => commands::new::run(args),
-        Command::Run(args) => commands::run::run(args),
-        Command::Preview(args) => commands::preview::run(args),
-        Command::Deploy(args) => commands::deploy::run(args),
+        Command::Claude(args) => commands::claude::run(args),
+        Command::Shell(args) => commands::shell::run(args),
     }
 }
