@@ -11,7 +11,6 @@ serde_json = "1"
 anyhow = "1"
 colored = "3"
 which = "7"
-dialoguer = "0.11"
 
 [dev-dependencies]
 tempfile = "3"

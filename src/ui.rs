@@ -14,11 +14,6 @@ pub fn success(message: &str) {
     eprintln!("{} {}", "✓".bold().green(), message);
 }
 
-/// Print an error message.
-pub fn error(message: &str) {
-    eprintln!("{} {}", "✗".bold().red(), message);
-}
-
 /// Print a warning message.
 pub fn warn(message: &str) {
     eprintln!("{} {}", "!".bold().yellow(), message);

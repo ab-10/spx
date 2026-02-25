@@ -1,4 +1,4 @@
-//! Integration test for `spawn init --local --non-interactive`.
+//! Integration test for `spawn new --non-interactive`.
 //!
 //! Runs the real binary against a real Docker daemon and verifies the
 //! side-effects: config file, scaffolded project, running container,
@@ -48,7 +48,7 @@ impl Drop for ContainerGuard {
 }
 
 #[test]
-fn init_local_end_to_end() {
+fn new_local_end_to_end() {
     require_docker();
 
     let project_name = format!("spawn-test-{}", std::process::id());
@@ -59,10 +59,10 @@ fn init_local_end_to_end() {
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Run: spawn init --local --non-interactive <project_name>
+    // Run: spawn new --non-interactive <project_name>
     let spawn_bin = env!("CARGO_BIN_EXE_spawn");
     let output = Command::new(spawn_bin)
-        .args(["init", "--local", "--non-interactive", &project_name])
+        .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
         .expect("failed to run spawn binary");
@@ -72,7 +72,7 @@ fn init_local_end_to_end() {
 
     assert!(
         output.status.success(),
-        "spawn init --local failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     let project_dir = tmp_dir.path().join(&project_name);
@@ -86,7 +86,6 @@ fn init_local_end_to_end() {
         serde_json::from_str(&config_text).expect("config is not valid JSON");
 
     assert_eq!(config["project_name"], project_name);
-    assert_eq!(config["local_only"], true);
     assert!(
         config["container_name"].is_string(),
         "expected container_name in config"
@@ -142,7 +141,7 @@ fn init_local_end_to_end() {
         "unexpected node --version output: {node_out}"
     );
 
-    // 6. `spawn run claude` precondition: exec as the claude user must work.
+    // 6. `spawn claude` precondition: exec as the claude user must work.
     //    Replicates the bug where `docker exec -it -u claude <container> claude`
     //    fails with: "unable to find user claude: no matching entries in passwd file"
     let (ok, whoami_out, whoami_err) = run_cmd(
@@ -152,7 +151,7 @@ fn init_local_end_to_end() {
     assert!(
         ok,
         "docker exec -u claude failed — the claude user does not exist in the container.\n\
-         This is the root cause of `spawn run claude` failing after `spawn init --local`.\n\
+         This is the root cause of `spawn claude` failing after `spawn new`.\n\
          stderr: {whoami_err}"
     );
     assert_eq!(
@@ -161,17 +160,17 @@ fn init_local_end_to_end() {
     );
 }
 
-/// After `spawn init --local`, running `spawn run claude` must be able to
+/// After `spawn new`, running `spawn claude` must be able to
 /// exec into the container as the `claude` user. This test replicates the
 /// exact failure:
 ///
 ///   $ docker exec -it -u claude spawn-<name> claude --dangerously-skip-permissions
 ///   Error response from daemon: unable to find user claude: no matching entries in passwd file
 ///
-/// The container created by init must use the spawn-base image which includes
+/// The container created by `spawn new` must use the spawn-base image which includes
 /// the `claude` user via `useradd -m -s /bin/bash claude`.
 #[test]
-fn run_claude_after_init_local() {
+fn run_claude_after_new() {
     require_docker();
 
     let project_name = format!("spawn-test-run-{}", std::process::id());
@@ -182,23 +181,23 @@ fn run_claude_after_init_local() {
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Step 1: Run `spawn init --local --non-interactive`
+    // Step 1: Run `spawn new --non-interactive`
     let spawn_bin = env!("CARGO_BIN_EXE_spawn");
     let output = Command::new(spawn_bin)
-        .args(["init", "--local", "--non-interactive", &project_name])
+        .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
-        .expect("failed to run spawn init");
+        .expect("failed to run spawn new");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "spawn init --local failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     // Step 2: Verify the claude user exists in the container.
-    // This is exactly what `spawn run claude` does via docker::exec_interactive.
+    // This is exactly what `spawn claude` does via docker::exec_interactive.
     let (ok, stdout, stderr) = run_cmd(
         "docker",
         &["exec", "-u", "claude", &container_name, "whoami"],
@@ -206,13 +205,13 @@ fn run_claude_after_init_local() {
     assert!(
         ok,
         "`docker exec -u claude {container_name} whoami` failed.\n\
-         This replicates the `spawn run claude` bug:\n\
+         This replicates the `spawn claude` bug:\n\
          \"unable to find user claude: no matching entries in passwd file\"\n\
          stderr: {stderr}"
     );
     assert_eq!(stdout, "claude");
 
-    // Step 3: Verify the claude CLI is available (what `spawn run claude` actually invokes).
+    // Step 3: Verify the claude CLI is available (what `spawn claude` actually invokes).
     let (ok, which_out, stderr) = run_cmd(
         "docker",
         &["exec", "-u", "claude", &container_name, "which", "claude"],
@@ -220,7 +219,7 @@ fn run_claude_after_init_local() {
     assert!(
         ok,
         "claude CLI not found in container when running as claude user.\n\
-         `spawn run claude` invokes `claude --dangerously-skip-permissions` as the claude user.\n\
+         `spawn claude` invokes `claude --dangerously-skip-permissions` as the claude user.\n\
          stderr: {stderr}"
     );
     assert!(
@@ -230,16 +229,16 @@ fn run_claude_after_init_local() {
 }
 
 /// Simulate a partial first run that crashes after scaffolding but before
-/// saving config, then verify that a second `spawn init --local` still
-/// succeeds rather than failing because the directory has leftover files.
+/// saving config, then verify that a second `spawn new` still succeeds
+/// rather than failing because the directory has leftover files.
 ///
 /// This replicates the real-world failure where:
 /// 1. First run scaffolds Next.js into the project directory
-/// 2. First run crashes (e.g. Stack Auth fails) before writing spawn.config.json
+/// 2. First run crashes before writing spawn.config.json
 /// 3. Second run passes the config-file guard (no config exists)
 /// 4. `create-next-app` refuses to scaffold into the non-empty directory
 #[test]
-fn init_local_retry_after_partial_failure() {
+fn new_retry_after_partial_failure() {
     require_docker();
 
     let project_name = format!("spawn-test-retry-{}", std::process::id());
@@ -270,10 +269,10 @@ fn init_local_retry_after_partial_failure() {
         "setup error: config should not exist yet"
     );
 
-    // --- Run spawn init --local (the retry) ---
+    // --- Run spawn new (the retry) ---
     let spawn_bin = env!("CARGO_BIN_EXE_spawn");
     let output = Command::new(spawn_bin)
-        .args(["init", "--local", "--non-interactive", &project_name])
+        .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
         .expect("failed to run spawn binary");
@@ -285,7 +284,7 @@ fn init_local_retry_after_partial_failure() {
     // but instead create-next-app bails because the directory is non-empty.
     assert!(
         output.status.success(),
-        "spawn init --local should recover from a partial previous run, \
+        "spawn new should recover from a partial previous run, \
          but it failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
@@ -300,11 +299,10 @@ fn init_local_retry_after_partial_failure() {
     );
 }
 
-/// Verify that `spawn init --local` (without --non-interactive) exits on its
-/// own and does NOT attach to the container shell. Before the fix, the process
-/// would call `docker::attach_shell` and hang waiting for TTY input.
+/// Verify that `spawn new` exits on its own and does NOT attach to the
+/// container shell.
 #[test]
-fn init_local_does_not_attach_to_container() {
+fn new_does_not_attach_to_container() {
     require_docker();
 
     let project_name = format!("spawn-test-noattach-{}", std::process::id());
@@ -315,12 +313,10 @@ fn init_local_does_not_attach_to_container() {
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Run WITHOUT --non-interactive. If attach_shell is called, the child
-    // process will block on stdin and we'll hit the timeout.
     let spawn_bin = env!("CARGO_BIN_EXE_spawn");
     let start = Instant::now();
     let child = Command::new(spawn_bin)
-        .args(["init", "--local", &project_name])
+        .args(["new", &project_name])
         .current_dir(tmp_dir.path())
         // Pipe stdin so attach_shell can't read from our terminal
         .stdin(Stdio::null())
@@ -339,7 +335,7 @@ fn init_local_does_not_attach_to_container() {
 
     assert!(
         output.status.success(),
-        "spawn init --local failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     // The process should exit promptly after setup — not hang on attach_shell.
@@ -352,7 +348,7 @@ fn init_local_does_not_attach_to_container() {
     // stdout should NOT contain the "Dropping you into the container" message
     assert!(
         !stdout.contains("Dropping you into the container"),
-        "init --local should not drop into the container shell.\nstdout:\n{stdout}"
+        "spawn new should not drop into the container shell.\nstdout:\n{stdout}"
     );
 
     // Config should still be written correctly

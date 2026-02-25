@@ -14,24 +14,18 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Full setup — container, DB, auth, GitHub, Vercel
-    Init(InitArgs),
-    /// Run a tool inside the container
-    Run(RunArgs),
-    /// Shareable Vercel preview URL from current working state
-    Preview(PreviewArgs),
-    /// Test-gated push to main → production
-    Deploy(DeployArgs),
+    /// Create a new project — container + scaffold
+    New(NewArgs),
+    /// Launch a Claude Code session inside the container
+    Claude(ClaudeArgs),
+    /// Open an interactive shell inside the container
+    Shell(ShellArgs),
 }
 
 #[derive(Parser)]
-pub struct InitArgs {
-    /// Project name (defaults to current directory name)
-    pub name: Option<String>,
-
-    /// Local scaffold only — cloud wiring deferred to first deploy/preview
-    #[arg(long)]
-    pub local: bool,
+pub struct NewArgs {
+    /// Project name
+    pub name: String,
 
     /// Skip interactive prompts and the shell drop-in at the end (for CI/scripting)
     #[arg(long)]
@@ -43,32 +37,14 @@ pub struct InitArgs {
 }
 
 #[derive(Parser)]
-pub struct RunArgs {
-    /// Tool to run (e.g. "claude")
-    pub tool: String,
-
+pub struct ClaudeArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
 }
 
 #[derive(Parser)]
-pub struct PreviewArgs {
-    /// Tear down the preview deployment
-    #[arg(long)]
-    pub close: bool,
-
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Parser)]
-pub struct DeployArgs {
-    /// Skip the test gate
-    #[arg(long)]
-    pub force: bool,
-
+pub struct ShellArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,

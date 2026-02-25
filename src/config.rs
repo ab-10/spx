@@ -7,16 +7,6 @@ const CONFIG_FILE: &str = "spawn.config.json";
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SpawnConfig {
     pub project_name: String,
-    #[serde(default)]
-    pub local_only: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub github_repo: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vercel_project: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vercel_org: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub database_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,11 +33,6 @@ impl SpawnConfig {
         std::fs::write(&path, contents)
             .with_context(|| format!("writing {}", path.display()))?;
         Ok(())
-    }
-
-    /// Check if cloud wiring is complete.
-    pub fn is_cloud_connected(&self) -> bool {
-        self.github_repo.is_some() && self.vercel_project.is_some()
     }
 
     /// Return the path to the config file in the given directory.

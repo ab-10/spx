@@ -1,15 +1,43 @@
 # spawn
 
-`spawn` is a CLI command that fully sets up a project for agentic development.
-This includes:
-1. Initializing local sandboxed dev environment with strong agent feedback loops.
-2. Deployment environment that's consistent with the development environment.
+`spawn` sets up Docker container with an opinionated NextJS webapp setup.
+This allows you to build with Claude Code (w/ `--dangerously-skip-permissions`) out of the box, with good feedback loops.
 
-## Goals
 
-1. Have a realistic preview env for the agent to use to debug.
-2. 1 line setup of an agent-ready coding environment for a production NextJS agentic app.
-3. 0 dev time spent on tasks that don't directly contribute to product development (dev env setup, prod deployment, observability, analytics setup).
+## Quickstart
+
+
+**Installation:**
+1. Get the latest pre-built binary [here](https://github.com/ab-10/spawn/releases)
+2. Put it on your path (e.g. `~/.local/bin`)
+
+**Creating a project:**
+
+```bash
+spawn new <project-name>
+cd <project-name>
+spawn claude
+```
+
+This just did the following:
+1. Created a docker sandbox for your project
+2. Initialized a NextJS project
+3. Ran Claude Code (in the sandbox) w/ `--dangerously-skip-permissions`
+
+
+Now you can give Claude Code detailed instructions for executing 
+
+**Previewing your project:**
+
+Ask Claude Code to run a development server, it should tell you the right port.
+
+If that fails:
+1. Message me, so I can fix it.
+2. Run `spawn shell`.
+3. Inside of the shell run `npm run dev`
+4. Find the (host) port in `spawn.config.json` and open `localhost:{port}` in the browser.
+    (The docker container maps port 3000 to 3000 or next available port on your machine).
+
 
 ## Stack
 
@@ -25,11 +53,11 @@ This includes:
 
 ## Usage
 
-### `spawn init [project-name]`
+### `spawn new [project-name]`
 
 ```
-spawn init [project-name | default to dir name]           # full setup, cloud-connected (default)
-spawn init [project-name | defaults to dir name] --local   # local only, no cloud wiring
+spawn new [project-name | default to dir name]           # full setup, cloud-connected (default)
+spawn new [project-name | defaults to dir name] --local   # local only, no cloud wiring
 ```
 
 **Default — cloud-connected:**
@@ -61,7 +89,7 @@ Port discovery:
 2. Keep incrementing to find the right port (up to `40000`)
 3. Display appropriate connection URL for port found
 
-### `spawn run claude`
+### `spawn claude`
 
 Launches an interactive Claude Code session inside the container in dangerous/auto-approve mode.
 
@@ -104,15 +132,15 @@ spawn deploy --force   # skip test gate
 4. Prints the production URL.
 
 If initialized with `--local`: detects missing cloud wiring via `spawn.config.json`, prompts once ("This project isn't connected to the cloud yet. Connect now? [Y/n]"), provisions Vercel Postgres + Stack Auth + GitHub + Vercel, then proceeds with deploy.
-This is the only time spawn asks a question after init.
+This is the only time spawn asks a question after project creation.
 
 ## Command Reference
 
 | Command | What it does |
 |---|---|
-| `spawn init [name]` | Full setup — container, DB, auth, GitHub, Vercel |
-| `spawn init [name] --local` | Local scaffold only — cloud wiring deferred to first deploy |
-| `spawn run claude` | Interactive Claude Code session inside the container |
+| `spawn new [name]` | Full setup — container, DB, auth, GitHub, Vercel |
+| `spawn new [name] --local` | Local scaffold only — cloud wiring deferred to first deploy |
+| `spawn claude` | Interactive Claude Code session inside the container |
 | `spawn preview` | Shareable Vercel preview URL from current working state |
 | `spawn preview --close` | Tears down the preview deployment |
 | `spawn deploy` | Test-gated push to main → production |
@@ -137,14 +165,14 @@ Tests should give the same confidence as running the real command manually. That
 - Tests are slow (~1-2 min for npm scaffolding) and that's fine — they reproduce the actual user experience.
 
 ```bash
-cargo test --test init_local    # requires Docker
+cargo test --test new_local    # requires Docker
 ```
 
 ## Reflect on
 
 - [ ] What are the limitations of using Vercel for deployment?
     At which stage do I need a direct interface with GCP?
-- [ ] `spawn init` vs `spawn init --local` flags.
+- [ ] `spawn new` vs `spawn new --local` flags.
     What's the cost of connecting deployment at `init`?
     Implement both ways and A/B test.
 - [ ] What's a good mechanism for implementing agent tools inside of the spawn environment?
