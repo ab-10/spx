@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
 use std::env;
+use std::fs;
+use std::path::Path;
 
 use crate::cli::RunArgs;
 use crate::config::SpawnConfig;
@@ -27,18 +29,22 @@ fn run_claude() -> Result<()> {
     // Ensure the container is running
     ensure_container_running(&container_name, &mut config, &cwd)?;
 
-    let port = config.port.unwrap_or(3000);
-    let url = format!("http://localhost:{port}");
+    let host_port = config.port
+        .ok_or_else(|| anyhow::anyhow!("No port configured. Re-run `spawn init` to fix."))?;
+    let url = format!("http://localhost:{host_port}");
     ui::info("Launching Claude Code session inside the container...");
     ui::info("The agent has access to:");
     ui::info(&format!(
         "  {} — Next.js dev server with hot reload",
-        ui::hyperlink(&url, &format!("localhost:{port}"))
+        ui::hyperlink(&url, &format!("localhost:{host_port}"))
     ));
     ui::info("  npm test — pre-configured Playwright suite");
     ui::info("  Full filesystem, git, and Vercel CLI access");
     ui::info("  Stack Auth — stackServerApp.getUser() works immediately");
     eprintln!();
+
+    // Write AGENTS.md so Claude Code knows the port mapping
+    write_agents_md(&cwd, host_port)?;
 
     // Launch Claude Code as the non-root "claude" user in auto-approve mode
     docker::exec_interactive(
@@ -79,5 +85,21 @@ fn ensure_container_running(container_name: &str, config: &mut SpawnConfig, cwd:
     // Restart the dev server
     let _ = docker::exec_in_container(container_name, &["bash", "-c", "npm run dev &"]);
 
+    Ok(())
+}
+
+/// Write AGENTS.md into the project directory so Claude Code knows the port mapping.
+fn write_agents_md(project_dir: &Path, host_port: u16) -> Result<()> {
+    let content = format!(
+        "\
+# Environment
+
+You are running inside a Docker container.
+
+- Run applications on port **3000** (the container port).
+- When telling the user how to access the app, use **localhost:{host_port}** (the host port mapped to container port 3000).
+"
+    );
+    fs::write(project_dir.join("AGENTS.md"), content)?;
     Ok(())
 }
