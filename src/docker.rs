@@ -209,23 +209,6 @@ pub fn exec_in_container(container_name: &str, cmd: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Execute a command inside a container and capture its stdout.
-pub fn exec_in_container_output(container_name: &str, cmd: &[&str]) -> Result<String> {
-    let output = Command::new("docker")
-        .arg("exec")
-        .arg(container_name)
-        .args(cmd)
-        .output()
-        .with_context(|| format!("failed to exec in container: {:?}", cmd))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Command failed in container: {stderr}");
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 /// Execute an interactive command in the container (attaches TTY).
 /// If `user` is provided, the command runs as that user (`docker exec -u <user>`).
 pub fn exec_interactive(container_name: &str, cmd: &[&str], user: Option<&str>) -> Result<()> {
@@ -296,11 +279,6 @@ pub fn container_exists(container_name: &str) -> Result<bool> {
         .stderr(Stdio::null())
         .status()?;
     Ok(output.success())
-}
-
-/// Drop the user into the running container with an interactive shell.
-pub fn attach_shell(container_name: &str) -> Result<()> {
-    exec_interactive(container_name, &["bash"], None)
 }
 
 /// Stop and remove a container.

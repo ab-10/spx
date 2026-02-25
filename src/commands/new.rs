@@ -20,11 +20,72 @@ pub fn run(args: NewArgs) -> Result<()> {
         );
     }
 
-    if args.local {
-        run_local(project_name, &project_dir, &container_name)?;
-    } else {
-        run_cloud(project_name, &project_dir, &container_name, args.non_interactive)?;
+    let total = 4;
+
+    // Step 1: Docker image
+    ui::step(1, total, "Pulling spawn base Docker image...");
+    docker::ensure_docker()?;
+    if let Err(_) = docker::pull_base_image() {
+        docker::build_base_image_if_missing()?;
     }
+
+    // Step 2: Create project directory and scaffold Next.js app
+    ui::step(2, total, "Scaffolding Next.js app...");
+    clean_leftover_project_dir(&project_dir)?;
+    std::fs::create_dir_all(&project_dir)?;
+    let project_dir_str = project_dir
+        .to_str()
+        .context("project path is not valid UTF-8")?;
+
+    // Remove any existing container with same name
+    docker::remove_container(&container_name)?;
+
+    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, &container_name)?;
+
+    // Scaffold Next.js inside the container
+    docker::exec_in_container(
+        &container_name,
+        &[
+            "npx",
+            "create-next-app@latest",
+            ".",
+            "--typescript",
+            "--tailwind",
+            "--eslint",
+            "--app",
+            "--src-dir",
+            "--import-alias",
+            "@/*",
+            "--use-npm",
+            "--yes",
+        ],
+    )?;
+
+    // Step 3: Initialize stack-auth
+    ui::step(3, total, "Initializing stack-auth...");
+    docker::exec_in_container(
+        &container_name,
+        &[
+            "npx",
+            "@stackframe/init-stack",
+            "--on-question",
+            "guess",
+        ],
+    )?;
+
+    // Step 4: Save config
+    ui::step(4, total, "Saving configuration...");
+    let config = SpawnConfig {
+        project_name: project_name.to_string(),
+        container_id: Some(container_id),
+        container_name: Some(container_name.to_string()),
+        port: Some(port),
+    };
+    config.save(&project_dir)?;
+
+    ui::success(&format!("Project '{project_name}' created."));
+
+    ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session."));
 
     Ok(())
 }
@@ -47,277 +108,4 @@ fn clean_leftover_project_dir(project_dir: &PathBuf) -> Result<()> {
             .context("failed to remove leftover project directory")?;
     }
     Ok(())
-}
-
-/// --local mode: scaffold only, no cloud wiring.
-fn run_local(project_name: &str, project_dir: &PathBuf, container_name: &str) -> Result<()> {
-    let total = 3;
-
-    // Step 1: Docker image
-    ui::step(1, total, "Pulling spawn base Docker image...");
-    docker::ensure_docker()?;
-    if let Err(_) = docker::pull_base_image() {
-        docker::build_base_image_if_missing()?;
-    }
-
-    // Step 2: Create project directory and scaffold Next.js app
-    ui::step(2, total, "Scaffolding Next.js app...");
-    clean_leftover_project_dir(project_dir)?;
-    std::fs::create_dir_all(project_dir)?;
-    let project_dir_str = project_dir
-        .to_str()
-        .context("project path is not valid UTF-8")?;
-
-    // Remove any existing container with same name
-    docker::remove_container(container_name)?;
-
-    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
-
-    // Scaffold Next.js inside the container
-    docker::exec_in_container(
-        container_name,
-        &[
-            "npx",
-            "create-next-app@latest",
-            ".",
-            "--typescript",
-            "--tailwind",
-            "--eslint",
-            "--app",
-            "--src-dir",
-            "--import-alias",
-            "@/*",
-            "--use-npm",
-            "--yes",
-        ],
-    )?;
-
-    // Step 3: Save config
-    ui::step(3, total, "Saving configuration...");
-    let config = SpawnConfig {
-        project_name: project_name.to_string(),
-        local_only: true,
-        container_id: Some(container_id),
-        container_name: Some(container_name.to_string()),
-        port: Some(port),
-        ..Default::default()
-    };
-    config.save(project_dir)?;
-
-    ui::success(&format!("Project '{project_name}' created (local mode)."));
-
-    ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session, or `spawn deploy` to connect to the cloud."));
-
-    Ok(())
-}
-
-/// Default mode: full cloud-connected setup.
-fn run_cloud(project_name: &str, project_dir: &PathBuf, container_name: &str, non_interactive: bool) -> Result<()> {
-    let total = 6;
-
-    // Step 1: Docker image
-    ui::step(1, total, "Pulling spawn base Docker image...");
-    docker::ensure_docker()?;
-    if let Err(_) = docker::pull_base_image() {
-        docker::build_base_image_if_missing()?;
-    }
-
-    // Step 2: Scaffold Next.js app
-    ui::step(2, total, "Scaffolding Next.js app with TypeScript, Tailwind, App Router...");
-    clean_leftover_project_dir(project_dir)?;
-    std::fs::create_dir_all(project_dir)?;
-    let project_dir_str = project_dir
-        .to_str()
-        .context("project path is not valid UTF-8")?;
-
-    docker::remove_container(container_name)?;
-    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, container_name)?;
-
-    docker::exec_in_container(
-        container_name,
-        &[
-            "npx",
-            "create-next-app@latest",
-            ".",
-            "--typescript",
-            "--tailwind",
-            "--eslint",
-            "--app",
-            "--src-dir",
-            "--import-alias",
-            "@/*",
-            "--use-npm",
-            "--yes",
-        ],
-    )?;
-
-    // Step 3: Provision Vercel Postgres
-    ui::step(3, total, "Provisioning Vercel Postgres...");
-    provision_vercel_postgres(container_name, project_name)?;
-
-    // Step 4: Sync env vars to Vercel
-    ui::step(4, total, "Syncing environment variables to Vercel...");
-    sync_env_to_vercel(container_name)?;
-
-    // Step 5: Create GitHub repo and link to Vercel
-    ui::step(5, total, "Creating GitHub repo and linking to Vercel...");
-    let github_repo = setup_github_and_vercel(container_name, project_name)?;
-
-    // Step 6: Save config
-    ui::step(6, total, "Saving configuration...");
-    let config = SpawnConfig {
-        project_name: project_name.to_string(),
-        local_only: false,
-        github_repo: Some(github_repo.clone()),
-        vercel_project: Some(project_name.to_string()),
-        container_id: Some(container_id),
-        container_name: Some(container_name.to_string()),
-        port: Some(port),
-        ..Default::default()
-    };
-    config.save(project_dir)?;
-
-    ui::success(&format!("Project '{project_name}' created."));
-    ui::info(&format!(
-        "GitHub: {}",
-        ui::hyperlink(
-            &format!("https://github.com/{github_repo}"),
-            &github_repo
-        )
-    ));
-    ui::next_step(&format!(
-        "Run `cd {project_name} && spawn claude` to start an agent session."
-    ));
-
-    if !non_interactive {
-        // Drop into container
-        ui::info("Dropping you into the container...");
-        docker::attach_shell(container_name)?;
-    }
-
-    Ok(())
-}
-
-/// Provision Vercel Postgres via the Vercel CLI.
-fn provision_vercel_postgres(container_name: &str, project_name: &str) -> Result<()> {
-    // Link or create the Vercel project first
-    docker::exec_in_container(
-        container_name,
-        &["npx", "vercel", "link", "--yes"],
-    )?;
-
-    // Create Postgres storage
-    let store_name = format!("{project_name}-db");
-    docker::exec_in_container(
-        container_name,
-        &[
-            "npx",
-            "vercel",
-            "stores",
-            "create",
-            "postgres",
-            &store_name,
-            "--yes",
-        ],
-    )?;
-
-    // Pull env vars (includes DATABASE_URL etc.)
-    docker::exec_in_container(
-        container_name,
-        &["npx", "vercel", "env", "pull", ".env.local"],
-    )?;
-
-    Ok(())
-}
-
-/// Sync .env.local to Vercel for preview + production environments.
-fn sync_env_to_vercel(container_name: &str) -> Result<()> {
-    // Read the .env.local file from the container
-    let env_content = docker::exec_in_container_output(
-        container_name,
-        &["cat", ".env.local"],
-    )?;
-
-    for line in env_content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            let key = key.trim();
-            let value = value.trim();
-            // Add to preview environment
-            let _ = docker::exec_in_container(
-                container_name,
-                &[
-                    "bash",
-                    "-c",
-                    &format!(
-                        "echo '{}' | npx vercel env add {} preview --yes 2>/dev/null || true",
-                        value, key
-                    ),
-                ],
-            );
-            // Add to production environment
-            let _ = docker::exec_in_container(
-                container_name,
-                &[
-                    "bash",
-                    "-c",
-                    &format!(
-                        "echo '{}' | npx vercel env add {} production --yes 2>/dev/null || true",
-                        value, key
-                    ),
-                ],
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Create a GitHub repo, push initial commit, and link to Vercel.
-fn setup_github_and_vercel(container_name: &str, project_name: &str) -> Result<String> {
-    // Initialize git repo
-    docker::exec_in_container(container_name, &["git", "init"])?;
-    docker::exec_in_container(container_name, &["git", "add", "-A"])?;
-    docker::exec_in_container(
-        container_name,
-        &["git", "commit", "-m", "Initial commit via spawn new"],
-    )?;
-
-    // Create GitHub repo via gh CLI
-    docker::exec_in_container(
-        container_name,
-        &[
-            "gh",
-            "repo",
-            "create",
-            project_name,
-            "--private",
-            "--source",
-            ".",
-            "--push",
-        ],
-    )?;
-
-    // Get the full repo name (owner/repo)
-    let repo_name = docker::exec_in_container_output(
-        container_name,
-        &["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-    )?;
-
-    // Link Vercel to the GitHub repo for auto-deploys
-    docker::exec_in_container(
-        container_name,
-        &["npx", "vercel", "link", "--yes"],
-    )?;
-
-    // Deploy once to activate the Vercel-GitHub integration
-    docker::exec_in_container(
-        container_name,
-        &["npx", "vercel", "--prod", "--yes"],
-    )?;
-
-    Ok(repo_name)
 }
