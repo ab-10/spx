@@ -9,6 +9,8 @@ use crate::docker;
 use crate::ui;
 
 pub(crate) fn ensure_container_running(container_name: &str, config: &mut SpawnConfig, cwd: &std::path::Path) -> Result<()> {
+    docker::ensure_docker()?;
+
     if docker::container_is_running(container_name)? {
         return Ok(());
     }
