@@ -10,6 +10,10 @@ pub struct Cli {
     /// Output as JSON for scripting and editor integrations
     #[arg(long, global = true)]
     pub json: bool,
+
+    /// Print verbose debug output (useful when a command hangs)
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 }
 
 #[derive(Subcommand)]

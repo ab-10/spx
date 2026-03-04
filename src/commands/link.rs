@@ -7,11 +7,14 @@ use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
-pub fn run(_args: LinkArgs) -> Result<()> {
+pub fn run(_args: LinkArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
+
+    if verbose { ui::verbose(&format!("Working directory: {}", cwd.display())); }
 
     migrate_if_needed(&cwd)?;
 
+    if verbose { ui::verbose("Loading spawn config..."); }
     let config = if SpawnConfig::exists(&cwd) {
         SpawnConfig::load(&cwd)
             .context("Failed to load spawn.config.json. Run `spawn new` first.")?
@@ -19,6 +22,7 @@ pub fn run(_args: LinkArgs) -> Result<()> {
         recover_config(&cwd)?
     };
 
+    if verbose { ui::verbose("Loading local state..."); }
     let mut state = if LocalState::exists(&cwd) {
         LocalState::load(&cwd)?
     } else {
@@ -29,13 +33,15 @@ pub fn run(_args: LinkArgs) -> Result<()> {
 
     let container_name = state.container_name.clone();
     let project_name = config.project_name.clone();
+    if verbose { ui::verbose(&format!("Container: {container_name}, project: {project_name}")); }
 
-    super::ensure_container_running(&container_name, &mut state, &cwd)?;
+    super::ensure_container_running(&container_name, &mut state, &cwd, verbose)?;
 
     let total = 6;
 
     // Step 1: GitHub auth (inside container)
     ui::step(1, total, "Checking GitHub authentication...");
+    if verbose { ui::verbose("Running: gh auth status"); }
     if !docker::check_in_container_as(&container_name, &["gh", "auth", "status"], "claude") {
         ui::info("Not logged in to GitHub. Starting login...");
         docker::exec_interactive(&container_name, &["gh", "auth", "login", "-h", "github.com"], Some("claude"))?;
@@ -44,6 +50,7 @@ pub fn run(_args: LinkArgs) -> Result<()> {
 
     // Step 2: Vercel auth (inside container)
     ui::step(2, total, "Checking Vercel authentication...");
+    if verbose { ui::verbose("Running: vercel whoami"); }
     if !docker::check_in_container_as(&container_name, &["vercel", "whoami"], "claude") {
         ui::info("Not logged in to Vercel. Starting login...");
         docker::exec_interactive(&container_name, &["vercel", "login"], Some("claude"))?;
@@ -52,6 +59,7 @@ pub fn run(_args: LinkArgs) -> Result<()> {
 
     // Step 3: Create GitHub repo (inside container)
     ui::step(3, total, "Creating GitHub repository...");
+    if verbose { ui::verbose(&format!("Running: gh repo create {project_name} --private --source=. --push")); }
     docker::exec_in_container_as(
         &container_name,
         &[
@@ -62,6 +70,7 @@ pub fn run(_args: LinkArgs) -> Result<()> {
     )?;
 
     // Read back the GitHub repo (owner/repo) from the remote
+    if verbose { ui::verbose("Reading remote URL..."); }
     let remote_url = docker::exec_capture_in_container_as(
         &container_name,
         &["git", "remote", "get-url", "origin"],
@@ -73,15 +82,18 @@ pub fn run(_args: LinkArgs) -> Result<()> {
 
     // Step 4: Create Vercel project + first deploy (inside container)
     ui::step(4, total, "Creating Vercel project and deploying...");
+    if verbose { ui::verbose("Running: vercel --yes"); }
     docker::exec_in_container_as(&container_name, &["vercel", "--yes"], "claude")?;
 
     // Step 5: Connect GitHub repo to Vercel for CD (inside container)
     ui::step(5, total, "Connecting GitHub to Vercel for continuous deployment...");
+    if verbose { ui::verbose(&format!("Linking GitHub repo '{github_repo}' to Vercel project via API...")); }
     connect_github_to_vercel_in_container(&container_name, &github_repo)?;
     ui::success("Continuous deployment configured.");
 
     // Step 6: Sync env vars to Vercel
     ui::step(6, total, "Syncing environment variables to Vercel...");
+    if verbose { ui::verbose("Reading .env.local..."); }
     sync_env_vars(&container_name, &cwd)?;
 
     ui::success("Project linked successfully!");

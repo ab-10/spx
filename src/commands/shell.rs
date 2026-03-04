@@ -6,17 +6,21 @@ use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
-pub fn run(_args: ShellArgs) -> Result<()> {
+pub fn run(_args: ShellArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
+
+    if verbose { ui::verbose(&format!("Working directory: {}", cwd.display())); }
 
     migrate_if_needed(&cwd)?;
 
+    if verbose { ui::verbose("Loading spawn config..."); }
     let config = if SpawnConfig::exists(&cwd) {
         SpawnConfig::load(&cwd)?
     } else {
         recover_config(&cwd)?
     };
 
+    if verbose { ui::verbose("Loading local state..."); }
     let mut state = if LocalState::exists(&cwd) {
         LocalState::load(&cwd)?
     } else {
@@ -26,10 +30,12 @@ pub fn run(_args: ShellArgs) -> Result<()> {
     };
 
     let container_name = state.container_name.clone();
+    if verbose { ui::verbose(&format!("Container: {container_name}")); }
 
-    super::ensure_container_running(&container_name, &mut state, &cwd)?;
+    super::ensure_container_running(&container_name, &mut state, &cwd, verbose)?;
 
     ui::info("Opening shell inside the container...");
+    if verbose { ui::verbose(&format!("Exec: docker exec -it -u claude {container_name} bash")); }
 
     docker::exec_interactive(&container_name, &["bash"], Some("claude"))?;
 

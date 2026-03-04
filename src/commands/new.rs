@@ -7,9 +7,11 @@ use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
-pub fn run(args: NewArgs) -> Result<()> {
+pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     let project_name = &args.name;
     let project_dir = env::current_dir()?.join(project_name);
+
+    if verbose { ui::verbose(&format!("Project directory: {}", project_dir.display())); }
 
     if SpawnConfig::exists(&project_dir) {
         bail!(
@@ -21,13 +23,17 @@ pub fn run(args: NewArgs) -> Result<()> {
 
     let mut state = LocalState::init(project_name);
     let container_name = state.container_name.clone();
+    if verbose { ui::verbose(&format!("Container name: {container_name}")); }
 
     let total = 6;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
+    if verbose { ui::verbose("Checking Docker availability..."); }
     docker::ensure_docker()?;
+    if verbose { ui::verbose("Pulling base image..."); }
     if let Err(_) = docker::pull_base_image() {
+        if verbose { ui::verbose("Pull failed, checking for local image..."); }
         docker::build_base_image_if_missing()?;
     }
 
@@ -42,9 +48,12 @@ pub fn run(args: NewArgs) -> Result<()> {
     // Remove any existing container with same name
     docker::remove_container(&container_name)?;
 
+    if verbose { ui::verbose("Creating container with port fallback..."); }
     let (container_id, port) = docker::create_container_with_fallback(project_dir_str, &container_name)?;
+    if verbose { ui::verbose(&format!("Container {container_id} created on port {port}.")); }
 
     // Scaffold Next.js inside the container
+    if verbose { ui::verbose("Running create-next-app inside container..."); }
     docker::exec_in_container(
         &container_name,
         &[
@@ -101,6 +110,7 @@ pub fn run(args: NewArgs) -> Result<()> {
 
     // Step 6: Start dev server
     ui::step(6, total, "Starting dev server...");
+    if verbose { ui::verbose("Running: npm run dev &"); }
     docker::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
 
     ui::success(&format!("Project '{project_name}' created."));

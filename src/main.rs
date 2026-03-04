@@ -10,11 +10,12 @@ use cli::{Cli, Command};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let verbose = cli.verbose;
 
     match cli.command {
-        Command::New(args) => commands::new::run(args),
-        Command::Link(args) => commands::link::run(args),
-        Command::Claude(args) => commands::claude::run(args),
-        Command::Shell(args) => commands::shell::run(args),
+        Command::New(args) => commands::new::run(args, verbose),
+        Command::Link(args) => commands::link::run(args, verbose),
+        Command::Claude(args) => commands::claude::run(args, verbose),
+        Command::Shell(args) => commands::shell::run(args, verbose),
     }
 }
