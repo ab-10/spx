@@ -5,17 +5,31 @@ const BASE_IMAGE: &str = "spawn-base:latest";
 
 /// Ensure Docker is available on the system.
 pub fn ensure_docker() -> Result<()> {
-    let status = Command::new("docker")
-        .arg("info")
+    use std::time::{Duration, Instant};
+    use std::thread;
+
+    // Use `docker info -f '{{.ID}}'` — minimal output, still confirms daemon is alive.
+    // Spawn + poll with timeout so we don't hang forever if the daemon is unresponsive.
+    let mut child = Command::new("docker")
+        .args(["info", "-f", "{{.ID}}"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .spawn()
         .context("docker is not installed or not in PATH")?;
 
-    if !status.success() {
-        bail!("Docker daemon is not running. Start Docker and try again.");
+    let timeout = Duration::from_secs(5);
+    let start = Instant::now();
+    loop {
+        match child.try_wait()? {
+            Some(status) if status.success() => return Ok(()),
+            Some(_) => bail!("Docker daemon is not running. Start Docker and try again."),
+            None if start.elapsed() >= timeout => {
+                let _ = child.kill();
+                bail!("Docker daemon did not respond within 5 seconds. Is Docker running?");
+            }
+            None => thread::sleep(Duration::from_millis(100)),
+        }
     }
-    Ok(())
 }
 
 /// Pull the spawn base Docker image.
@@ -210,6 +224,24 @@ pub fn exec_in_container(container_name: &str, cmd: &[&str]) -> Result<()> {
 
     if !status.success() {
         bail!("Command '{}' failed in container with exit code {:?}", display_cmd, status.code());
+    }
+    Ok(())
+}
+
+/// Execute a command inside a running container in detached mode (fire-and-forget).
+/// Uses `docker exec -d` so it returns immediately without waiting for the command to finish.
+pub fn exec_detached_in_container(container_name: &str, cmd: &[&str]) -> Result<()> {
+    let display_cmd = cmd.join(" ");
+
+    let status = Command::new("docker")
+        .args(["exec", "-d"])
+        .arg(container_name)
+        .args(cmd)
+        .status()
+        .with_context(|| format!("failed to exec detached '{display_cmd}' in container"))?;
+
+    if !status.success() {
+        bail!("Detached command '{}' failed in container with exit code {:?}", display_cmd, status.code());
     }
     Ok(())
 }
