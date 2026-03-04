@@ -3,14 +3,13 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::cli::NewArgs;
-use crate::config::SpawnConfig;
+use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
 pub fn run(args: NewArgs) -> Result<()> {
     let project_name = &args.name;
     let project_dir = env::current_dir()?.join(project_name);
-    let container_name = format!("spawn-{project_name}");
 
     if SpawnConfig::exists(&project_dir) {
         bail!(
@@ -19,6 +18,9 @@ pub fn run(args: NewArgs) -> Result<()> {
             SpawnConfig::path(&project_dir).display()
         );
     }
+
+    let mut state = LocalState::init(project_name);
+    let container_name = state.container_name.clone();
 
     let total = 7;
 
@@ -77,12 +79,14 @@ pub fn run(args: NewArgs) -> Result<()> {
     ui::step(4, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
-        container_id: Some(container_id),
-        container_name: Some(container_name.to_string()),
-        port: Some(port),
-        github_repo: None,
     };
     config.save(&project_dir)?;
+
+    state.container_id = Some(container_id);
+    state.port = Some(port);
+    state.save(&project_dir)?;
+
+    ensure_gitignore_has_spawn(&project_dir)?;
 
     // Step 5: Git init
     ui::step(5, total, "Initializing git repository...");

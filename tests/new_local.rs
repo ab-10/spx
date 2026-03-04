@@ -52,10 +52,6 @@ fn new_local_end_to_end() {
     require_docker();
 
     let project_name = format!("spawn-test-{}", std::process::id());
-    let container_name = format!("spawn-{project_name}");
-    let _guard = ContainerGuard {
-        name: container_name.clone(),
-    };
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -77,7 +73,7 @@ fn new_local_end_to_end() {
 
     let project_dir = tmp_dir.path().join(&project_name);
 
-    // 1. Config file exists and parses correctly
+    // 1a. spawn.config.json exists and has only project_name
     let config_path = project_dir.join("spawn.config.json");
     assert!(config_path.exists(), "spawn.config.json not created");
 
@@ -87,8 +83,52 @@ fn new_local_end_to_end() {
 
     assert_eq!(config["project_name"], project_name);
     assert!(
-        config["container_name"].is_string(),
-        "expected container_name in config"
+        config.get("container_id").is_none(),
+        "container_id should not be in spawn.config.json"
+    );
+    assert!(
+        config.get("container_name").is_none(),
+        "container_name should not be in spawn.config.json"
+    );
+
+    // 1b. .spawn/state.json exists with container_name, container_id, port
+    let state_path = project_dir.join(".spawn").join("state.json");
+    assert!(state_path.exists(), ".spawn/state.json not created");
+
+    let state_text = std::fs::read_to_string(&state_path).expect("failed to read state");
+    let state: serde_json::Value =
+        serde_json::from_str(&state_text).expect("state is not valid JSON");
+
+    assert!(
+        state["container_name"].is_string(),
+        "expected container_name in state"
+    );
+    let container_name = state["container_name"].as_str().unwrap().to_string();
+    assert!(
+        container_name.starts_with(&format!("spawn-{project_name}-")),
+        "container_name should start with spawn-{{project_name}}-: got {container_name}"
+    );
+    assert!(
+        state["container_id"].is_string(),
+        "expected container_id in state"
+    );
+    assert!(
+        state["port"].is_number(),
+        "expected port in state"
+    );
+
+    // Use the actual container name from state for cleanup
+    let _guard = ContainerGuard {
+        name: container_name.clone(),
+    };
+
+    // 1c. .gitignore contains .spawn/
+    let gitignore_path = project_dir.join(".gitignore");
+    assert!(gitignore_path.exists(), ".gitignore not found");
+    let gitignore = std::fs::read_to_string(&gitignore_path).expect("failed to read .gitignore");
+    assert!(
+        gitignore.contains(".spawn/"),
+        ".gitignore should contain .spawn/"
     );
 
     // 2. Next.js scaffold exists
@@ -174,10 +214,6 @@ fn run_claude_after_new() {
     require_docker();
 
     let project_name = format!("spawn-test-run-{}", std::process::id());
-    let container_name = format!("spawn-{project_name}");
-    let _guard = ContainerGuard {
-        name: container_name.clone(),
-    };
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -195,6 +231,16 @@ fn run_claude_after_new() {
         output.status.success(),
         "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+
+    // Read the container name from .spawn/state.json
+    let project_dir = tmp_dir.path().join(&project_name);
+    let state_text = std::fs::read_to_string(project_dir.join(".spawn/state.json"))
+        .expect("failed to read state");
+    let state: serde_json::Value = serde_json::from_str(&state_text).expect("invalid state JSON");
+    let container_name = state["container_name"].as_str().unwrap().to_string();
+    let _guard = ContainerGuard {
+        name: container_name.clone(),
+    };
 
     // Step 2: Verify the claude user exists in the container.
     // This is exactly what `spawn claude` does via docker::exec_interactive.
@@ -242,10 +288,6 @@ fn new_retry_after_partial_failure() {
     require_docker();
 
     let project_name = format!("spawn-test-retry-{}", std::process::id());
-    let container_name = format!("spawn-{project_name}");
-    let _guard = ContainerGuard {
-        name: container_name.clone(),
-    };
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let project_dir = tmp_dir.path().join(&project_name);
@@ -280,6 +322,21 @@ fn new_retry_after_partial_failure() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
+    // Read container name from state for cleanup
+    let state_path = project_dir.join(".spawn/state.json");
+    if state_path.exists() {
+        let state_text = std::fs::read_to_string(&state_path).unwrap_or_default();
+        if let Ok(state) = serde_json::from_str::<serde_json::Value>(&state_text) {
+            if let Some(name) = state["container_name"].as_str() {
+                let _ = Command::new("docker")
+                    .args(["rm", "-f", name])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
     // This is the assertion that currently FAILS — the retry should succeed
     // but instead create-next-app bails because the directory is non-empty.
     assert!(
@@ -306,10 +363,6 @@ fn new_does_not_attach_to_container() {
     require_docker();
 
     let project_name = format!("spawn-test-noattach-{}", std::process::id());
-    let container_name = format!("spawn-{project_name}");
-    let _guard = ContainerGuard {
-        name: container_name.clone(),
-    };
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -357,4 +410,19 @@ fn new_does_not_attach_to_container() {
         project_dir.join("spawn.config.json").exists(),
         "spawn.config.json not created"
     );
+
+    // Clean up container using name from state
+    let state_path = project_dir.join(".spawn/state.json");
+    if state_path.exists() {
+        let state_text = std::fs::read_to_string(&state_path).unwrap_or_default();
+        if let Ok(state) = serde_json::from_str::<serde_json::Value>(&state_text) {
+            if let Some(name) = state["container_name"].as_str() {
+                let _ = Command::new("docker")
+                    .args(["rm", "-f", name])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
 }

@@ -3,24 +3,34 @@ use std::env;
 use std::path::Path;
 
 use crate::cli::LinkArgs;
-use crate::config::SpawnConfig;
+use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
 pub fn run(_args: LinkArgs) -> Result<()> {
     let cwd = env::current_dir()?;
 
-    // --- Preconditions ---
-    let mut config = SpawnConfig::load(&cwd)
-        .context("No spawn.config.json found. Run `spawn new` first.")?;
+    migrate_if_needed(&cwd)?;
 
-    let container_name = config
-        .container_name
-        .clone()
-        .unwrap_or_else(|| format!("spawn-{}", config.project_name));
+    let config = if SpawnConfig::exists(&cwd) {
+        SpawnConfig::load(&cwd)
+            .context("Failed to load spawn.config.json. Run `spawn new` first.")?
+    } else {
+        recover_config(&cwd)?
+    };
+
+    let mut state = if LocalState::exists(&cwd) {
+        LocalState::load(&cwd)?
+    } else {
+        let s = LocalState::init(&config.project_name);
+        s.save(&cwd)?;
+        s
+    };
+
+    let container_name = state.container_name.clone();
     let project_name = config.project_name.clone();
 
-    super::ensure_container_running(&container_name, &mut config, &cwd)?;
+    super::ensure_container_running(&container_name, &mut state, &cwd)?;
 
     let total = 6;
 
@@ -70,12 +80,9 @@ pub fn run(_args: LinkArgs) -> Result<()> {
     connect_github_to_vercel_in_container(&container_name, &github_repo)?;
     ui::success("Continuous deployment configured.");
 
-    // Step 6: Sync env vars to Vercel + save config
+    // Step 6: Sync env vars to Vercel
     ui::step(6, total, "Syncing environment variables to Vercel...");
     sync_env_vars(&container_name, &cwd)?;
-
-    config.github_repo = Some(github_repo.clone());
-    config.save(&cwd)?;
 
     ui::success("Project linked successfully!");
     ui::info(&format!(
@@ -107,8 +114,6 @@ fn parse_github_repo(remote_url: &str) -> Option<String> {
 }
 
 /// Connect GitHub repo to Vercel for CD by running a bash script inside the container.
-/// Reads the Vercel token from the container filesystem and the projectId from
-/// .vercel/project.json, then calls the Vercel API via curl.
 fn connect_github_to_vercel_in_container(container_name: &str, github_repo: &str) -> Result<()> {
     let script = format!(
         r#"

@@ -21,14 +21,22 @@ fn create_fake_docker(dir: &std::path::Path) {
         .expect("failed to chmod fake docker");
 }
 
-/// Write a minimal spawn.config.json so `spawn shell` / `spawn claude`
-/// can load a project config.
+/// Write spawn.config.json and .spawn/state.json so `spawn shell` / `spawn claude`
+/// can load project config and local state.
 fn write_config(dir: &std::path::Path) {
     std::fs::write(
         dir.join("spawn.config.json"),
-        r#"{"project_name":"test-project","container_name":"spawn-test-project","port":3000}"#,
+        r#"{"project_name":"test-project"}"#,
     )
     .expect("failed to write config");
+
+    let state_dir = dir.join(".spawn");
+    std::fs::create_dir_all(&state_dir).expect("failed to create .spawn dir");
+    std::fs::write(
+        state_dir.join("state.json"),
+        r#"{"container_name":"spawn-test-project","port":3000}"#,
+    )
+    .expect("failed to write state");
 }
 
 #[test]

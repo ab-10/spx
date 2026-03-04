@@ -4,21 +4,34 @@ use std::fs;
 use std::path::Path;
 
 use crate::cli::ClaudeArgs;
-use crate::config::SpawnConfig;
+use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
 use crate::docker;
 use crate::ui;
 
 pub fn run(_args: ClaudeArgs) -> Result<()> {
     let cwd = env::current_dir()?;
-    let mut config = SpawnConfig::load(&cwd)?;
-    let container_name = config
-        .container_name
-        .clone()
-        .unwrap_or_else(|| format!("spawn-{}", config.project_name));
 
-    super::ensure_container_running(&container_name, &mut config, &cwd)?;
+    migrate_if_needed(&cwd)?;
 
-    let host_port = config.port
+    let config = if SpawnConfig::exists(&cwd) {
+        SpawnConfig::load(&cwd)?
+    } else {
+        recover_config(&cwd)?
+    };
+
+    let mut state = if LocalState::exists(&cwd) {
+        LocalState::load(&cwd)?
+    } else {
+        let s = LocalState::init(&config.project_name);
+        s.save(&cwd)?;
+        s
+    };
+
+    let container_name = state.container_name.clone();
+
+    super::ensure_container_running(&container_name, &mut state, &cwd)?;
+
+    let host_port = state.port
         .ok_or_else(|| anyhow::anyhow!("No port configured. Re-run `spawn new` to fix."))?;
     let url = format!("http://localhost:{host_port}");
     ui::info("Launching Claude Code session inside the container...");
