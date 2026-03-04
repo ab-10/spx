@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod link;
 pub mod new;
 pub mod shell;
 

@@ -16,6 +16,8 @@ pub struct Cli {
 pub enum Command {
     /// Create a new project — container + scaffold
     New(NewArgs),
+    /// Wire project to GitHub + Vercel for continuous deployment
+    Link(LinkArgs),
     /// Launch a Claude Code session inside the container
     Claude(ClaudeArgs),
     /// Open an interactive shell inside the container
@@ -28,6 +30,17 @@ pub struct NewArgs {
     pub name: String,
 
     /// Skip interactive prompts and the shell drop-in at the end (for CI/scripting)
+    #[arg(long)]
+    pub non_interactive: bool,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Parser)]
+pub struct LinkArgs {
+    /// Skip interactive prompts (for CI/scripting)
     #[arg(long)]
     pub non_interactive: bool,
 

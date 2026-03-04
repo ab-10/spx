@@ -66,11 +66,16 @@ pub fn build_base_image_if_missing() -> Result<()> {
     let dockerfile = r#"
 FROM node:20-bookworm
 
-# Install system dependencies
+# Install system dependencies + GitHub CLI
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     sudo \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (Claude Code requires non-root for --dangerously-skip-permissions)
@@ -78,8 +83,8 @@ RUN useradd -m -s /bin/bash claude \
     && usermod -aG sudo claude \
     && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code and Vercel CLI globally
+RUN npm install -g @anthropic-ai/claude-code vercel
 
 # Install Playwright system deps and browsers
 RUN npx playwright install --with-deps chromium
@@ -205,6 +210,43 @@ pub fn exec_in_container(container_name: &str, cmd: &[&str]) -> Result<()> {
 
     if !status.success() {
         bail!("Command '{}' failed in container with exit code {:?}", display_cmd, status.code());
+    }
+    Ok(())
+}
+
+/// Execute a command inside a running container as a specific user, streaming output.
+pub fn exec_in_container_as(container_name: &str, cmd: &[&str], user: &str) -> Result<()> {
+    let display_cmd = cmd.join(" ");
+    crate::ui::stream_header(&format!("docker exec -u {user} {container_name} {display_cmd}"));
+
+    let status = Command::new("docker")
+        .args(["exec", "-u", user])
+        .arg(container_name)
+        .args(cmd)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to exec '{display_cmd}' as {user} in container"))?;
+
+    if !status.success() {
+        bail!("Command '{}' failed in container with exit code {:?}", display_cmd, status.code());
+    }
+    Ok(())
+}
+
+/// Copy a file or directory from the host into a container.
+pub fn copy_to_container(container_name: &str, host_path: &str, container_path: &str) -> Result<()> {
+    crate::ui::stream_header(&format!("docker cp {host_path} {container_name}:{container_path}"));
+
+    let status = Command::new("docker")
+        .args(["cp", host_path, &format!("{container_name}:{container_path}")])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to copy {host_path} to {container_name}:{container_path}"))?;
+
+    if !status.success() {
+        bail!("docker cp failed for {host_path} -> {container_name}:{container_path}");
     }
     Ok(())
 }
