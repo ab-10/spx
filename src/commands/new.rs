@@ -4,14 +4,16 @@ use std::path::PathBuf;
 
 use crate::cli::NewArgs;
 use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
-use crate::docker;
+use crate::runtime::{self, Runtime};
 use crate::ui;
 
 pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     let project_name = &args.name;
     let project_dir = env::current_dir()?.join(project_name);
 
-    if verbose { ui::verbose(&format!("Project directory: {}", project_dir.display())); }
+    if verbose {
+        ui::verbose(&format!("Project directory: {}", project_dir.display()));
+    }
 
     if SpawnConfig::exists(&project_dir) {
         bail!(
@@ -21,20 +23,38 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    let mut state = LocalState::init(project_name);
+    // Determine runtime: explicit flag or auto-detect
+    let runtime = if let Some(rt) = args.runtime {
+        rt
+    } else {
+        Runtime::detect()?
+    };
+    if verbose {
+        ui::verbose(&format!("Using runtime: {runtime}"));
+    }
+
+    let mut state = LocalState::init(project_name, runtime);
     let container_name = state.container_name.clone();
-    if verbose { ui::verbose(&format!("Container name: {container_name}")); }
+    if verbose {
+        ui::verbose(&format!("Container name: {container_name}"));
+    }
 
     let total = 6;
 
-    // Step 1: Docker image
-    ui::step(1, total, "Pulling spawn base Docker image...");
-    if verbose { ui::verbose("Checking Docker availability..."); }
-    docker::ensure_docker()?;
-    if verbose { ui::verbose("Pulling base image..."); }
-    if let Err(_) = docker::pull_base_image() {
-        if verbose { ui::verbose("Pull failed, checking for local image..."); }
-        docker::build_base_image_if_missing()?;
+    // Step 1: Container image
+    ui::step(1, total, &format!("Pulling spawn base {runtime} image..."));
+    if verbose {
+        ui::verbose(&format!("Checking {} availability...", runtime));
+    }
+    runtime::ensure_available(runtime)?;
+    if verbose {
+        ui::verbose("Pulling base image...");
+    }
+    if runtime::pull_base_image(runtime).is_err() {
+        if verbose {
+            ui::verbose("Pull failed, checking for local image...");
+        }
+        runtime::build_base_image_if_missing(runtime)?;
     }
 
     // Step 2: Create project directory and scaffold Next.js app
@@ -46,15 +66,30 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         .context("project path is not valid UTF-8")?;
 
     // Remove any existing container with same name
-    docker::remove_container(&container_name)?;
+    runtime::remove_container(runtime, &container_name)?;
 
-    if verbose { ui::verbose("Creating container with port fallback..."); }
-    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, &container_name)?;
-    if verbose { ui::verbose(&format!("Container {container_id} created on port {port}.")); }
+    if verbose {
+        ui::verbose("Creating container...");
+    }
+    let result =
+        runtime::create_container_with_fallback(runtime, project_dir_str, &container_name)?;
+    if verbose {
+        if let Some(port) = result.host_port {
+            ui::verbose(&format!(
+                "Container {} created on port {port}.",
+                result.container_id
+            ));
+        } else {
+            ui::verbose(&format!("Container {} created.", result.container_id));
+        }
+    }
 
     // Scaffold Next.js inside the container
-    if verbose { ui::verbose("Running create-next-app inside container..."); }
-    docker::exec_in_container(
+    if verbose {
+        ui::verbose("Running create-next-app inside container...");
+    }
+    runtime::exec_in_container(
+        runtime,
         &container_name,
         &[
             "npx",
@@ -79,21 +114,24 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     };
     config.save(&project_dir)?;
 
-    state.container_id = Some(container_id);
-    state.port = Some(port);
+    state.container_id = Some(result.container_id);
+    state.port = result.host_port;
+    state.container_ip = result.container_ip;
     state.save(&project_dir)?;
 
     ensure_gitignore_has_spawn(&project_dir)?;
 
     // Step 4: Git init
     ui::step(4, total, "Initializing git repository...");
-    docker::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
-    docker::exec_in_container_as(
+    runtime::exec_in_container_as(runtime, &container_name, &["git", "init"], "claude")?;
+    runtime::exec_in_container_as(
+        runtime,
         &container_name,
         &["git", "config", "user.email", "spawn@localhost"],
         "claude",
     )?;
-    docker::exec_in_container_as(
+    runtime::exec_in_container_as(
+        runtime,
         &container_name,
         &["git", "config", "user.name", "spawn"],
         "claude",
@@ -101,8 +139,9 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
 
     // Step 5: Initial commit
     ui::step(5, total, "Creating initial commit...");
-    docker::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
-    docker::exec_in_container_as(
+    runtime::exec_in_container_as(runtime, &container_name, &["git", "add", "-A"], "claude")?;
+    runtime::exec_in_container_as(
+        runtime,
         &container_name,
         &["git", "commit", "-m", "Initial commit from spawn"],
         "claude",
@@ -110,27 +149,31 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
 
     // Step 6: Start dev server
     ui::step(6, total, "Starting dev server...");
-    if verbose { ui::verbose("Running: npm run dev &"); }
-    docker::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
+    if verbose {
+        ui::verbose("Running: npm run dev &");
+    }
+    runtime::exec_in_container(runtime, &container_name, &["bash", "-c", "npm run dev &"])?;
 
     ui::success(&format!("Project '{project_name}' created."));
 
-    let host_port = port;
-    let url = format!("http://localhost:{host_port}");
-    ui::info(&format!(
-        "Dev server running at {}",
-        ui::hyperlink(&url, &format!("localhost:{host_port}"))
-    ));
+    if let Some(url_label) = state.dev_url() {
+        let url = format!("http://{url_label}");
+        ui::info(&format!(
+            "Dev server running at {}",
+            ui::hyperlink(&url, &url_label)
+        ));
+    }
 
-    ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session."));
+    ui::next_step(&format!(
+        "Run `cd {project_name} && spawn claude` to start an agent session."
+    ));
 
     Ok(())
 }
 
 /// If the project directory exists and has files but no config, a previous run
 /// must have crashed partway through. Wipe the leftovers so scaffolding can
-/// start fresh. The config-file check in `run()` already ran, so we know
-/// there is no spawn.config.json.
+/// start fresh.
 fn clean_leftover_project_dir(project_dir: &PathBuf) -> Result<()> {
     if !project_dir.exists() {
         return Ok(());

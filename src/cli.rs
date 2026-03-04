@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use crate::runtime::Runtime;
+
 /// CLI that fully sets up a project for agentic development.
 #[derive(Parser)]
 #[command(name = "spawn", version, about)]
@@ -40,6 +42,10 @@ pub struct NewArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
+
+    /// Container runtime to use (auto-detected if not specified)
+    #[arg(long, value_enum)]
+    pub runtime: Option<Runtime>,
 }
 
 #[derive(Parser)]

@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::runtime::Runtime;
+
 const CONFIG_FILE: &str = "spawn.config.json";
 const STATE_DIR: &str = ".spawn";
 const STATE_FILE: &str = "state.json";
@@ -49,6 +51,25 @@ pub struct LocalState {
     pub container_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<Runtime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_ip: Option<String>,
+}
+
+impl LocalState {
+    /// Get the runtime, defaulting to Docker for backward compatibility.
+    pub fn runtime(&self) -> Runtime {
+        self.runtime.unwrap_or(Runtime::Docker)
+    }
+
+    /// Get the dev server URL label (e.g. "localhost:3000" or "192.168.1.2:3000").
+    pub fn dev_url(&self) -> Option<String> {
+        match self.runtime() {
+            Runtime::Docker => self.port.map(|p| format!("localhost:{p}")),
+            Runtime::AppleContainer => self.container_ip.as_ref().map(|ip| format!("{ip}:3000")),
+        }
+    }
 }
 
 impl LocalState {
@@ -81,12 +102,14 @@ impl LocalState {
     }
 
     /// Create a fresh LocalState with a unique petname-based container name.
-    pub fn init(project_name: &str) -> Self {
+    pub fn init(project_name: &str, runtime: Runtime) -> Self {
         let suffix = petname::petname(3, "-").unwrap_or_else(|| "container".to_string());
         LocalState {
             container_name: format!("spawn-{project_name}-{suffix}"),
             container_id: None,
             port: None,
+            runtime: Some(runtime),
+            container_ip: None,
         }
     }
 }
@@ -130,11 +153,13 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
     let container_id = raw.get("container_id").and_then(|v| v.as_str()).map(|s| s.to_string());
     let port = raw.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
 
-    // Write new LocalState
+    // Write new LocalState (old format is always Docker)
     let state = LocalState {
         container_name,
         container_id,
         port,
+        runtime: None,
+        container_ip: None,
     };
     state.save(dir)?;
 

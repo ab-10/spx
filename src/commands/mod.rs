@@ -6,27 +6,58 @@ pub mod shell;
 use anyhow::Result;
 
 use crate::config::LocalState;
-use crate::docker;
+use crate::runtime::{self, Runtime};
 use crate::ui;
 
-pub(crate) fn ensure_container_running(container_name: &str, state: &mut LocalState, cwd: &std::path::Path, verbose: bool) -> Result<()> {
-    if verbose { ui::verbose("Checking Docker availability..."); }
-    docker::ensure_docker()?;
-    if verbose { ui::verbose("Docker is available."); }
+pub(crate) fn ensure_container_running(
+    runtime: Runtime,
+    container_name: &str,
+    state: &mut LocalState,
+    cwd: &std::path::Path,
+    verbose: bool,
+) -> Result<()> {
+    if verbose {
+        ui::verbose(&format!("Checking {} availability...", runtime));
+    }
+    runtime::ensure_available(runtime)?;
+    if verbose {
+        ui::verbose(&format!("{} is available.", runtime));
+    }
 
-    if verbose { ui::verbose(&format!("Checking if container '{container_name}' is running...")); }
-    if docker::container_is_running(container_name)? {
-        if verbose { ui::verbose("Container is already running."); }
+    if verbose {
+        ui::verbose(&format!(
+            "Checking if container '{container_name}' is running..."
+        ));
+    }
+    if runtime::container_is_running(runtime, container_name)? {
+        if verbose {
+            ui::verbose("Container is already running.");
+        }
         return Ok(());
     }
 
-    if verbose { ui::verbose("Container is not running. Checking if it exists..."); }
-    if docker::container_exists(container_name)? {
+    if verbose {
+        ui::verbose("Container is not running. Checking if it exists...");
+    }
+    if runtime::container_exists(runtime, container_name)? {
         ui::info("Container exists but is stopped. Starting it...");
-        docker::start_container(container_name)?;
-        if verbose { ui::verbose("Container started. Launching dev server..."); }
-        let _ = docker::exec_detached_in_container(container_name, &["bash", "-c", "npm run dev"]);
-        if verbose { ui::verbose("Dev server launched."); }
+        runtime::start_container(runtime, container_name)?;
+        // Refresh container IP after restart (Apple Container IPs may change)
+        if let Ok(Some(ip)) = runtime::get_container_ip(runtime, container_name) {
+            state.container_ip = Some(ip);
+            state.save(cwd)?;
+        }
+        if verbose {
+            ui::verbose("Container started. Launching dev server...");
+        }
+        let _ = runtime::exec_detached_in_container(
+            runtime,
+            container_name,
+            &["bash", "-c", "npm run dev"],
+        );
+        if verbose {
+            ui::verbose("Dev server launched.");
+        }
         return Ok(());
     }
 
@@ -35,13 +66,31 @@ pub(crate) fn ensure_container_running(container_name: &str, state: &mut LocalSt
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("project path is not valid UTF-8"))?;
 
-    if verbose { ui::verbose(&format!("Creating container with fallback ports for '{project_dir}'...")); }
-    let (_container_id, port) = docker::create_container_with_fallback(project_dir, container_name)?;
-    if verbose { ui::verbose(&format!("Container created on port {port}.")); }
-    state.port = Some(port);
+    if verbose {
+        ui::verbose(&format!(
+            "Creating container for '{project_dir}'..."
+        ));
+    }
+    let result = runtime::create_container_with_fallback(runtime, project_dir, container_name)?;
+    if verbose {
+        if let Some(port) = result.host_port {
+            ui::verbose(&format!("Container created on port {port}."));
+        } else {
+            ui::verbose("Container created.");
+        }
+    }
+    state.container_id = Some(result.container_id);
+    state.port = result.host_port;
+    state.container_ip = result.container_ip;
     state.save(cwd)?;
-    let _ = docker::exec_detached_in_container(container_name, &["bash", "-c", "npm run dev"]);
-    if verbose { ui::verbose("Dev server launched."); }
+    let _ = runtime::exec_detached_in_container(
+        runtime,
+        container_name,
+        &["bash", "-c", "npm run dev"],
+    );
+    if verbose {
+        ui::verbose("Dev server launched.");
+    }
 
     Ok(())
 }
