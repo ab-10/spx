@@ -42,7 +42,6 @@ pub fn run(_args: ClaudeArgs) -> Result<()> {
     ));
     ui::info("  npm test — pre-configured Playwright suite");
     ui::info("  Full filesystem, git, and Vercel CLI access");
-    ui::info("  Stack Auth — stackServerApp.getUser() works immediately");
     eprintln!();
 
     // Write AGENTS.md so Claude Code knows the port mapping

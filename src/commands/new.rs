@@ -22,7 +22,7 @@ pub fn run(args: NewArgs) -> Result<()> {
     let mut state = LocalState::init(project_name);
     let container_name = state.container_name.clone();
 
-    let total = 7;
+    let total = 6;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -63,20 +63,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         ],
     )?;
 
-    // Step 3: Initialize stack-auth
-    ui::step(3, total, "Initializing stack-auth...");
-    docker::exec_in_container(
-        &container_name,
-        &[
-            "npx",
-            "@stackframe/init-stack",
-            "--on-question",
-            "guess",
-        ],
-    )?;
-
-    // Step 4: Save config (before git init so it's included in initial commit)
-    ui::step(4, total, "Saving configuration...");
+    // Step 3: Save config (before git init so it's included in initial commit)
+    ui::step(3, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
     };
@@ -88,8 +76,8 @@ pub fn run(args: NewArgs) -> Result<()> {
 
     ensure_gitignore_has_spawn(&project_dir)?;
 
-    // Step 5: Git init
-    ui::step(5, total, "Initializing git repository...");
+    // Step 4: Git init
+    ui::step(4, total, "Initializing git repository...");
     docker::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
     docker::exec_in_container_as(
         &container_name,
@@ -102,8 +90,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         "claude",
     )?;
 
-    // Step 6: Initial commit
-    ui::step(6, total, "Creating initial commit...");
+    // Step 5: Initial commit
+    ui::step(5, total, "Creating initial commit...");
     docker::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
     docker::exec_in_container_as(
         &container_name,
@@ -111,8 +99,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         "claude",
     )?;
 
-    // Step 7: Start dev server
-    ui::step(7, total, "Starting dev server...");
+    // Step 6: Start dev server
+    ui::step(6, total, "Starting dev server...");
     docker::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
 
     ui::success(&format!("Project '{project_name}' created."));
