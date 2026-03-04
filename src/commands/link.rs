@@ -38,7 +38,7 @@ pub fn run(_args: LinkArgs) -> Result<()> {
     ui::step(1, total, "Checking GitHub authentication...");
     if !docker::check_in_container_as(&container_name, &["gh", "auth", "status"], "claude") {
         ui::info("Not logged in to GitHub. Starting login...");
-        docker::exec_interactive(&container_name, &["gh", "auth", "login"], Some("claude"))?;
+        docker::exec_interactive(&container_name, &["gh", "auth", "login", "-h", "github.com"], Some("claude"))?;
     }
     ui::success("GitHub authenticated.");
 
