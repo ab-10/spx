@@ -44,7 +44,7 @@ pub fn run(_args: ClaudeArgs) -> Result<()> {
 
     ui::success("Claude Code session ended.");
     ui::info("spawn does not auto-commit. You handle git.");
-    ui::next_step("Run `git diff` to review changes, then `spawn preview` or `spawn deploy`.");
+    ui::next_step("Run `git diff` to review changes, then commit and push to deploy.");
 
     Ok(())
 }
