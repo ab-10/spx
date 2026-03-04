@@ -20,7 +20,7 @@ pub fn run(args: NewArgs) -> Result<()> {
         );
     }
 
-    let total = 4;
+    let total = 7;
 
     // Step 1: Docker image
     ui::step(1, total, "Pulling spawn base Docker image...");
@@ -73,17 +73,52 @@ pub fn run(args: NewArgs) -> Result<()> {
         ],
     )?;
 
-    // Step 4: Save config
+    // Step 4: Save config (before git init so it's included in initial commit)
     ui::step(4, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
         container_id: Some(container_id),
         container_name: Some(container_name.to_string()),
         port: Some(port),
+        github_repo: None,
     };
     config.save(&project_dir)?;
 
+    // Step 5: Git init
+    ui::step(5, total, "Initializing git repository...");
+    docker::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
+    docker::exec_in_container_as(
+        &container_name,
+        &["git", "config", "user.email", "spawn@localhost"],
+        "claude",
+    )?;
+    docker::exec_in_container_as(
+        &container_name,
+        &["git", "config", "user.name", "spawn"],
+        "claude",
+    )?;
+
+    // Step 6: Initial commit
+    ui::step(6, total, "Creating initial commit...");
+    docker::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
+    docker::exec_in_container_as(
+        &container_name,
+        &["git", "commit", "-m", "Initial commit from spawn"],
+        "claude",
+    )?;
+
+    // Step 7: Start dev server
+    ui::step(7, total, "Starting dev server...");
+    docker::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
+
     ui::success(&format!("Project '{project_name}' created."));
+
+    let host_port = port;
+    let url = format!("http://localhost:{host_port}");
+    ui::info(&format!(
+        "Dev server running at {}",
+        ui::hyperlink(&url, &format!("localhost:{host_port}"))
+    ));
 
     ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session."));
 
