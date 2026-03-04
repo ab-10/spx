@@ -102,8 +102,17 @@ The agent has access to:
 
 | Command | What it does |
 |---|---|
-| `spawn new [name] | Local scaffold only — cloud wiring deferred to first deploy |
+| `spawn new [name]` | Local scaffold only — cloud wiring deferred to first deploy |
+| `spawn link` | Wire project to GitHub + Vercel for continuous deployment |
 | `spawn claude` | Interactive Claude Code session inside the container |
+| `spawn shell` | Interactive shell inside the container |
+
+### Global flags
+
+| Flag | What it does |
+|---|---|
+| `--json` | Output as JSON for scripting and editor integrations |
+| `-v, --verbose` | Print verbose debug output (useful when a command hangs) |
 
 ## Design Principles
 
