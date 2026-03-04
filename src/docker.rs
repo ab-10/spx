@@ -234,23 +234,6 @@ pub fn exec_in_container_as(container_name: &str, cmd: &[&str], user: &str) -> R
     Ok(())
 }
 
-/// Copy a file or directory from the host into a container.
-pub fn copy_to_container(container_name: &str, host_path: &str, container_path: &str) -> Result<()> {
-    crate::ui::stream_header(&format!("docker cp {host_path} {container_name}:{container_path}"));
-
-    let status = Command::new("docker")
-        .args(["cp", host_path, &format!("{container_name}:{container_path}")])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("failed to copy {host_path} to {container_name}:{container_path}"))?;
-
-    if !status.success() {
-        bail!("docker cp failed for {host_path} -> {container_name}:{container_path}");
-    }
-    Ok(())
-}
-
 /// Execute an interactive command in the container (attaches TTY).
 /// If `user` is provided, the command runs as that user (`docker exec -u <user>`).
 pub fn exec_interactive(container_name: &str, cmd: &[&str], user: Option<&str>) -> Result<()> {
@@ -280,6 +263,69 @@ pub fn exec_interactive(container_name: &str, cmd: &[&str], user: Option<&str>) 
             display_cmd,
             status.code()
         );
+    }
+    Ok(())
+}
+
+/// Run a command silently inside a container as a specific user, returning whether it succeeded.
+pub fn check_in_container_as(container_name: &str, cmd: &[&str], user: &str) -> bool {
+    Command::new("docker")
+        .args(["exec", "-u", user])
+        .arg(container_name)
+        .args(cmd)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Execute a command inside a container as a specific user and capture its stdout.
+pub fn exec_capture_in_container_as(container_name: &str, cmd: &[&str], user: &str) -> Result<String> {
+    let display_cmd = cmd.join(" ");
+
+    let output = Command::new("docker")
+        .args(["exec", "-u", user])
+        .arg(container_name)
+        .args(cmd)
+        .stderr(Stdio::inherit())
+        .output()
+        .with_context(|| format!("failed to exec '{display_cmd}' as {user} in container"))?;
+
+    if !output.status.success() {
+        bail!("Command '{}' failed in container with exit code {:?}", display_cmd, output.status.code());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Execute a command inside a container with data piped to stdin.
+pub fn exec_with_stdin_in_container(container_name: &str, cmd: &[&str], stdin_data: &str) -> Result<()> {
+    use std::io::Write;
+
+    let display_cmd = cmd.join(" ");
+    crate::ui::stream_header(&format!("docker exec -i {container_name} {display_cmd}"));
+
+    let mut child = Command::new("docker")
+        .args(["exec", "-i"])
+        .arg(container_name)
+        .args(cmd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("failed to exec '{display_cmd}' in container"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(stdin_data.as_bytes())
+            .with_context(|| format!("failed to write stdin for '{display_cmd}'"))?;
+    }
+
+    let status = child.wait().with_context(|| format!("failed to wait for '{display_cmd}'"))?;
+
+    if !status.success() {
+        bail!("Command '{}' failed in container with exit code {:?}", display_cmd, status.code());
     }
     Ok(())
 }

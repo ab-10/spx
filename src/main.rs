@@ -2,7 +2,6 @@ mod cli;
 mod commands;
 mod config;
 mod docker;
-mod host;
 mod ui;
 
 use anyhow::Result;
