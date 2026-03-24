@@ -129,7 +129,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     if verbose {
         ui::verbose("Running: npm run dev &");
     }
-    runtime::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
+    runtime::exec_detached_in_container(&container_name, &["bash", "-c", "npm run dev"])?;
 
     ui::success(&format!("Project '{project_name}' created."));
 
