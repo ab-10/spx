@@ -24,23 +24,23 @@ fn run_cmd(cmd: &str, args: &[&str]) -> (bool, String, String) {
     )
 }
 
-/// Fail fast if Docker isn't available.
-fn require_docker() {
-    let (ok, _, _) = run_cmd("docker", &["info"]);
+/// Fail fast if Apple Container CLI isn't available.
+fn require_container() {
+    let (ok, _, _) = run_cmd("container", &["--version"]);
     assert!(
         ok,
-        "Docker daemon is not running. These tests require a running Docker instance."
+        "Apple Container CLI is not available. These tests require `container` to be installed."
     );
 }
 
-/// RAII guard that removes a Docker container on drop — even on panic.
+/// RAII guard that removes a container on drop — even on panic.
 struct ContainerGuard {
     name: String,
 }
 
 impl Drop for ContainerGuard {
     fn drop(&mut self) {
-        let _ = Command::new("docker")
+        let _ = Command::new("container")
             .args(["rm", "-f", &self.name])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -50,7 +50,7 @@ impl Drop for ContainerGuard {
 
 #[test]
 fn container_has_browser_for_gh_auth() {
-    require_docker();
+    require_container();
 
     let project_name = format!("spawn-test-ghauth-{}", std::process::id());
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -87,7 +87,7 @@ fn container_has_browser_for_gh_auth() {
 
     for cmd in &browser_cmds {
         let (ok, _, _) = run_cmd(
-            "docker",
+            "container",
             &["exec", &container_name, "which", cmd],
         );
         if ok {

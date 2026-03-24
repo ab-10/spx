@@ -55,8 +55,7 @@ pub fn create_container(project_dir: &str, container_name: &str) -> Result<Conta
 
     Ok(ContainerResult {
         container_id,
-        host_port: None,
-        container_ip: Some(ip),
+        container_ip: ip,
     })
 }
 

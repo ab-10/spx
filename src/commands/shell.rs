@@ -3,7 +3,7 @@ use std::env;
 
 use crate::cli::ShellArgs;
 use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
-use crate::runtime::{self, Runtime};
+use crate::runtime;
 use crate::ui;
 
 pub fn run(_args: ShellArgs, verbose: bool) -> Result<()> {
@@ -30,30 +30,26 @@ pub fn run(_args: ShellArgs, verbose: bool) -> Result<()> {
     let mut state = if LocalState::exists(&cwd) {
         LocalState::load(&cwd)?
     } else {
-        let s = LocalState::init(&config.project_name, Runtime::Docker);
+        let s = LocalState::init(&config.project_name);
         s.save(&cwd)?;
         s
     };
 
     let container_name = state.container_name.clone();
-    let runtime = state.runtime();
     if verbose {
-        ui::verbose(&format!(
-            "Container: {container_name}, runtime: {runtime}"
-        ));
+        ui::verbose(&format!("Container: {container_name}"));
     }
 
-    super::ensure_container_running(runtime, &container_name, &mut state, &cwd, verbose)?;
+    super::ensure_container_running(&container_name, &mut state, &cwd, verbose)?;
 
     ui::info("Opening shell inside the container...");
     if verbose {
         ui::verbose(&format!(
-            "Exec: {} exec -it -u claude {container_name} bash",
-            runtime.binary()
+            "Exec: container exec -it -u claude {container_name} bash"
         ));
     }
 
-    runtime::exec_interactive(runtime, &container_name, &["bash"], Some("claude"))?;
+    runtime::exec_interactive(&container_name, &["bash"], Some("claude"))?;
 
     ui::success("Shell session ended.");
 

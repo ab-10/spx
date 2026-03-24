@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::cli::ClaudeArgs;
 use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
-use crate::runtime::{self, Runtime};
+use crate::runtime;
 use crate::ui;
 
 pub fn run(_args: ClaudeArgs, verbose: bool) -> Result<()> {
@@ -44,20 +44,17 @@ pub fn run(_args: ClaudeArgs, verbose: bool) -> Result<()> {
         if verbose {
             ui::verbose("No local state found, initializing...");
         }
-        let s = LocalState::init(&config.project_name, Runtime::Docker);
+        let s = LocalState::init(&config.project_name);
         s.save(&cwd)?;
         s
     };
 
     let container_name = state.container_name.clone();
-    let runtime = state.runtime();
     if verbose {
-        ui::verbose(&format!(
-            "Container: {container_name}, runtime: {runtime}"
-        ));
+        ui::verbose(&format!("Container: {container_name}"));
     }
 
-    super::ensure_container_running(runtime, &container_name, &mut state, &cwd, verbose)?;
+    super::ensure_container_running(&container_name, &mut state, &cwd, verbose)?;
 
     // Write AGENTS.md so Claude Code knows the environment
     write_agents_md(&cwd, &state)?;
@@ -77,14 +74,12 @@ pub fn run(_args: ClaudeArgs, verbose: bool) -> Result<()> {
 
     if verbose {
         ui::verbose(&format!(
-            "Exec: {} exec -it -u claude {container_name} claude --dangerously-skip-permissions",
-            runtime.binary()
+            "Exec: container exec -it -u claude {container_name} claude --dangerously-skip-permissions"
         ));
     }
 
     // Launch Claude Code as the non-root "claude" user in auto-approve mode
     runtime::exec_interactive(
-        runtime,
         &container_name,
         &["claude", "--dangerously-skip-permissions"],
         Some("claude"),
@@ -99,41 +94,20 @@ pub fn run(_args: ClaudeArgs, verbose: bool) -> Result<()> {
 
 /// Write AGENTS.md into the project directory so Claude Code knows the environment.
 fn write_agents_md(project_dir: &Path, state: &LocalState) -> Result<()> {
-    let runtime = state.runtime();
-    let (container_type, access_info) = match runtime {
-        Runtime::Docker => {
-            let port = state.port.unwrap_or(3000);
-            (
-                "Docker container",
-                format!(
-                    "- Run applications on port **3000** (the container port).\n\
-                     - When telling the user how to access the app, use **localhost:{port}** (the host port mapped to container port 3000)."
-                ),
-            )
-        }
-        Runtime::AppleContainer => {
-            let ip = state
-                .container_ip
-                .as_deref()
-                .unwrap_or("unknown");
-            (
-                "Apple container",
-                format!(
-                    "- Run applications on port **3000**.\n\
-                     - The container has its own IP address: **{ip}**.\n\
-                     - When telling the user how to access the app, use **{ip}:3000**."
-                ),
-            )
-        }
-    };
+    let ip = state
+        .container_ip
+        .as_deref()
+        .unwrap_or("unknown");
 
     let content = format!(
         "\
 # Environment
 
-You are running inside a {container_type}.
+You are running inside an Apple container.
 
-{access_info}
+- Run applications on port **3000**.
+- The container has its own IP address: **{ip}**.
+- When telling the user how to access the app, use **{ip}:3000**.
 "
     );
     fs::write(project_dir.join("AGENTS.md"), content)?;

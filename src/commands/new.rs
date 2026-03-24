@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::NewArgs;
 use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
-use crate::runtime::{self, Runtime};
+use crate::runtime;
 use crate::ui;
 
 pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
@@ -23,17 +23,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    // Determine runtime: explicit flag or auto-detect
-    let runtime = if let Some(rt) = args.runtime {
-        rt
-    } else {
-        Runtime::detect()?
-    };
-    if verbose {
-        ui::verbose(&format!("Using runtime: {runtime}"));
-    }
-
-    let mut state = LocalState::init(project_name, runtime);
+    let mut state = LocalState::init(project_name);
     let container_name = state.container_name.clone();
     if verbose {
         ui::verbose(&format!("Container name: {container_name}"));
@@ -42,19 +32,19 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     let total = 6;
 
     // Step 1: Container image
-    ui::step(1, total, &format!("Pulling spawn base {runtime} image..."));
+    ui::step(1, total, "Pulling spawn base container image...");
     if verbose {
-        ui::verbose(&format!("Checking {} availability...", runtime));
+        ui::verbose("Checking Apple Container availability...");
     }
-    runtime::ensure_available(runtime)?;
+    runtime::ensure_available()?;
     if verbose {
         ui::verbose("Pulling base image...");
     }
-    if runtime::pull_base_image(runtime).is_err() {
+    if runtime::pull_base_image().is_err() {
         if verbose {
             ui::verbose("Pull failed, checking for local image...");
         }
-        runtime::build_base_image_if_missing(runtime)?;
+        runtime::build_base_image_if_missing()?;
     }
 
     // Step 2: Create project directory and scaffold Next.js app
@@ -66,22 +56,14 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         .context("project path is not valid UTF-8")?;
 
     // Remove any existing container with same name
-    runtime::remove_container(runtime, &container_name)?;
+    runtime::remove_container(&container_name)?;
 
     if verbose {
         ui::verbose("Creating container...");
     }
-    let result =
-        runtime::create_container_with_fallback(runtime, project_dir_str, &container_name)?;
+    let result = runtime::create_container(project_dir_str, &container_name)?;
     if verbose {
-        if let Some(port) = result.host_port {
-            ui::verbose(&format!(
-                "Container {} created on port {port}.",
-                result.container_id
-            ));
-        } else {
-            ui::verbose(&format!("Container {} created.", result.container_id));
-        }
+        ui::verbose(&format!("Container {} created.", result.container_id));
     }
 
     // Scaffold Next.js inside the container
@@ -89,7 +71,6 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         ui::verbose("Running create-next-app inside container...");
     }
     runtime::exec_in_container(
-        runtime,
         &container_name,
         &[
             "npx",
@@ -115,23 +96,20 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     config.save(&project_dir)?;
 
     state.container_id = Some(result.container_id);
-    state.port = result.host_port;
-    state.container_ip = result.container_ip;
+    state.container_ip = Some(result.container_ip);
     state.save(&project_dir)?;
 
     ensure_gitignore_has_spawn(&project_dir)?;
 
     // Step 4: Git init
     ui::step(4, total, "Initializing git repository...");
-    runtime::exec_in_container_as(runtime, &container_name, &["git", "init"], "claude")?;
+    runtime::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
     runtime::exec_in_container_as(
-        runtime,
         &container_name,
         &["git", "config", "user.email", "spawn@localhost"],
         "claude",
     )?;
     runtime::exec_in_container_as(
-        runtime,
         &container_name,
         &["git", "config", "user.name", "spawn"],
         "claude",
@@ -139,9 +117,8 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
 
     // Step 5: Initial commit
     ui::step(5, total, "Creating initial commit...");
-    runtime::exec_in_container_as(runtime, &container_name, &["git", "add", "-A"], "claude")?;
+    runtime::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
     runtime::exec_in_container_as(
-        runtime,
         &container_name,
         &["git", "commit", "-m", "Initial commit from spawn"],
         "claude",
@@ -152,7 +129,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     if verbose {
         ui::verbose("Running: npm run dev &");
     }
-    runtime::exec_in_container(runtime, &container_name, &["bash", "-c", "npm run dev &"])?;
+    runtime::exec_in_container(&container_name, &["bash", "-c", "npm run dev &"])?;
 
     ui::success(&format!("Project '{project_name}' created."));
 
