@@ -3,19 +3,65 @@ use std::process::{Command, Stdio};
 
 use super::{ContainerResult, BASE_IMAGE};
 
-/// Ensure the Apple Container CLI is available.
+pub const MIN_VERSION: &str = "0.7.0";
+
+/// Parse a version string like "0.7.0" or "container 0.7.0" into (major, minor, patch).
+fn parse_version(version_output: &str) -> Option<(u32, u32, u32)> {
+    // Find the first substring that looks like major.minor.patch
+    for word in version_output.split_whitespace() {
+        let parts: Vec<&str> = word.split('.').collect();
+        if parts.len() == 3 {
+            if let (Ok(major), Ok(minor), Ok(patch)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+            ) {
+                return Some((major, minor, patch));
+            }
+        }
+    }
+    None
+}
+
+/// Check that a version string meets the minimum required version.
+fn check_version(version_output: &str) -> Result<()> {
+    let actual = parse_version(version_output).with_context(|| {
+        format!("Could not parse Apple Container version from: {version_output}")
+    })?;
+
+    let min = parse_version(MIN_VERSION)
+        .expect("MIN_VERSION constant is not a valid version");
+
+    if actual < min {
+        bail!(
+            "Apple Container version {}.{}.{} is too old. \
+             Minimum required: {MIN_VERSION}. Update with: brew upgrade container",
+            actual.0,
+            actual.1,
+            actual.2,
+        );
+    }
+
+    Ok(())
+}
+
+/// Ensure the Apple Container CLI is available and meets the minimum version.
 /// Unlike Docker, there is no daemon — the CLI spawns VMs on demand.
 pub fn ensure_apple_container() -> Result<()> {
-    let status = Command::new("container")
+    let output = Command::new("container")
         .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
         .context("Apple Container CLI is not installed or not in PATH")?;
 
-    if !status.success() {
+    if !output.status.success() {
         bail!("Apple Container CLI is not working. Reinstall with: brew install container");
     }
+
+    let version_output = String::from_utf8_lossy(&output.stdout);
+    check_version(version_output.trim())?;
+
     Ok(())
 }
 
@@ -120,4 +166,29 @@ pub fn get_container_ip(container_name: &str) -> Result<String> {
     }
 
     Ok(ip.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_below_minimum() {
+        assert!(check_version("0.6.0").is_err());
+    }
+
+    #[test]
+    fn version_at_minimum() {
+        assert!(check_version("0.7.0").is_ok());
+    }
+
+    #[test]
+    fn version_patch_above() {
+        assert!(check_version("0.7.1").is_ok());
+    }
+
+    #[test]
+    fn version_minor_above() {
+        assert!(check_version("0.10.0").is_ok());
+    }
 }
