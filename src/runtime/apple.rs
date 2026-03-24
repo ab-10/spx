@@ -74,12 +74,13 @@ pub fn container_is_running(container_name: &str) -> Result<bool> {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
 
-    // Apple Container inspect returns JSON — check for running state.
-    // The exact field path may vary; try the Docker-compatible path first.
+    // Apple Container inspect returns: [{"status": "running", ...}]
     let running = json
-        .get("State")
-        .and_then(|s| s.get("Running"))
-        .and_then(|r| r.as_bool())
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|obj| obj.get("status"))
+        .and_then(|s| s.as_str())
+        .map(|s| s == "running")
         .unwrap_or(false);
 
     Ok(running)
@@ -100,27 +101,24 @@ pub fn get_container_ip(container_name: &str) -> Result<String> {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).context("failed to parse container inspect output")?;
 
-    // Try common JSON paths for container IP
-    let ip = json
-        .get("NetworkSettings")
-        .and_then(|ns| ns.get("IPAddress"))
-        .and_then(|ip| ip.as_str())
-        .or_else(|| {
-            json.get("NetworkSettings")
-                .and_then(|ns| ns.get("Networks"))
-                .and_then(|nets| {
-                    nets.as_object()
-                        .and_then(|m| m.values().next())
-                        .and_then(|net| net.get("IPAddress"))
-                        .and_then(|ip| ip.as_str())
-                })
-        })
-        .unwrap_or("")
-        .to_string();
+    // Apple Container inspect returns:
+    //   [{"networks": [{"address": "192.168.65.13/24", ...}], ...}]
+    let addr = json
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|obj| obj.get("networks"))
+        .and_then(|nets| nets.as_array())
+        .and_then(|nets| nets.first())
+        .and_then(|net| net.get("address"))
+        .and_then(|a| a.as_str())
+        .unwrap_or("");
+
+    // Strip CIDR suffix (e.g. "192.168.65.13/24" → "192.168.65.13")
+    let ip = addr.split('/').next().unwrap_or("");
 
     if ip.is_empty() {
         bail!("Could not determine IP address for container '{container_name}'");
     }
 
-    Ok(ip)
+    Ok(ip.to_string())
 }
