@@ -39,3 +39,8 @@ pub fn hyperlink(url: &str, label: &str) -> String {
 pub fn stream_header(command: &str) {
     eprintln!("{} {}", "$".dimmed(), command.dimmed());
 }
+
+/// Print a verbose debug message (only shown with -v).
+pub fn verbose(message: &str) {
+    eprintln!("{} {}", "[verbose]".dimmed(), message.dimmed());
+}

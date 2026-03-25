@@ -3,14 +3,17 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::cli::NewArgs;
-use crate::config::SpawnConfig;
-use crate::docker;
+use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
+use crate::runtime;
 use crate::ui;
 
-pub fn run(args: NewArgs) -> Result<()> {
+pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     let project_name = &args.name;
     let project_dir = env::current_dir()?.join(project_name);
-    let container_name = format!("spawn-{project_name}");
+
+    if verbose {
+        ui::verbose(&format!("Project directory: {}", project_dir.display()));
+    }
 
     if SpawnConfig::exists(&project_dir) {
         bail!(
@@ -20,13 +23,28 @@ pub fn run(args: NewArgs) -> Result<()> {
         );
     }
 
-    let total = 4;
+    let mut state = LocalState::init(project_name);
+    let container_name = state.container_name.clone();
+    if verbose {
+        ui::verbose(&format!("Container name: {container_name}"));
+    }
 
-    // Step 1: Docker image
-    ui::step(1, total, "Pulling spawn base Docker image...");
-    docker::ensure_docker()?;
-    if let Err(_) = docker::pull_base_image() {
-        docker::build_base_image_if_missing()?;
+    let total = 6;
+
+    // Step 1: Container image
+    ui::step(1, total, "Pulling spawn base container image...");
+    if verbose {
+        ui::verbose("Checking Apple Container availability...");
+    }
+    runtime::ensure_available()?;
+    if verbose {
+        ui::verbose("Pulling base image...");
+    }
+    if runtime::pull_base_image().is_err() {
+        if verbose {
+            ui::verbose("Pull failed, checking for local image...");
+        }
+        runtime::build_base_image_if_missing()?;
     }
 
     // Step 2: Create project directory and scaffold Next.js app
@@ -38,12 +56,21 @@ pub fn run(args: NewArgs) -> Result<()> {
         .context("project path is not valid UTF-8")?;
 
     // Remove any existing container with same name
-    docker::remove_container(&container_name)?;
+    runtime::remove_container(&container_name)?;
 
-    let (container_id, port) = docker::create_container_with_fallback(project_dir_str, &container_name)?;
+    if verbose {
+        ui::verbose("Creating container...");
+    }
+    let result = runtime::create_container(project_dir_str, &container_name)?;
+    if verbose {
+        ui::verbose(&format!("Container {} created.", result.container_id));
+    }
 
     // Scaffold Next.js inside the container
-    docker::exec_in_container(
+    if verbose {
+        ui::verbose("Running create-next-app inside container...");
+    }
+    runtime::exec_in_container(
         &container_name,
         &[
             "npx",
@@ -61,39 +88,69 @@ pub fn run(args: NewArgs) -> Result<()> {
         ],
     )?;
 
-    // Step 3: Initialize stack-auth
-    ui::step(3, total, "Initializing stack-auth...");
-    docker::exec_in_container(
-        &container_name,
-        &[
-            "npx",
-            "@stackframe/init-stack",
-            "--on-question",
-            "guess",
-        ],
-    )?;
-
-    // Step 4: Save config
-    ui::step(4, total, "Saving configuration...");
+    // Step 3: Save config (before git init so it's included in initial commit)
+    ui::step(3, total, "Saving configuration...");
     let config = SpawnConfig {
         project_name: project_name.to_string(),
-        container_id: Some(container_id),
-        container_name: Some(container_name.to_string()),
-        port: Some(port),
     };
     config.save(&project_dir)?;
 
+    state.container_id = Some(result.container_id);
+    state.container_ip = Some(result.container_ip);
+    state.save(&project_dir)?;
+
+    ensure_gitignore_has_spawn(&project_dir)?;
+
+    // Step 4: Git init
+    ui::step(4, total, "Initializing git repository...");
+    runtime::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
+    runtime::exec_in_container_as(
+        &container_name,
+        &["git", "config", "user.email", "spawn@localhost"],
+        "claude",
+    )?;
+    runtime::exec_in_container_as(
+        &container_name,
+        &["git", "config", "user.name", "spawn"],
+        "claude",
+    )?;
+
+    // Step 5: Initial commit
+    ui::step(5, total, "Creating initial commit...");
+    runtime::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
+    runtime::exec_in_container_as(
+        &container_name,
+        &["git", "commit", "-m", "Initial commit from spawn"],
+        "claude",
+    )?;
+
+    // Step 6: Start dev server
+    ui::step(6, total, "Starting dev server...");
+    if verbose {
+        ui::verbose("Running: npm run dev &");
+    }
+    runtime::exec_detached_in_container(&container_name, &["bash", "-c", "npm run dev"])?;
+
     ui::success(&format!("Project '{project_name}' created."));
 
-    ui::next_step(&format!("Run `cd {project_name} && spawn claude` to start an agent session."));
+    if let Some(url_label) = state.dev_url() {
+        let url = format!("http://{url_label}");
+        ui::info(&format!(
+            "Dev server running at {}",
+            ui::hyperlink(&url, &url_label)
+        ));
+    }
+
+    ui::next_step(&format!(
+        "Run `cd {project_name} && spawn claude` to start an agent session."
+    ));
 
     Ok(())
 }
 
 /// If the project directory exists and has files but no config, a previous run
 /// must have crashed partway through. Wipe the leftovers so scaffolding can
-/// start fresh. The config-file check in `run()` already ran, so we know
-/// there is no spawn.config.json.
+/// start fresh.
 fn clean_leftover_project_dir(project_dir: &PathBuf) -> Result<()> {
     if !project_dir.exists() {
         return Ok(());

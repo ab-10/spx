@@ -2,23 +2,54 @@ use anyhow::Result;
 use std::env;
 
 use crate::cli::ShellArgs;
-use crate::config::SpawnConfig;
-use crate::docker;
+use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
+use crate::runtime;
 use crate::ui;
 
-pub fn run(_args: ShellArgs) -> Result<()> {
+pub fn run(_args: ShellArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
-    let mut config = SpawnConfig::load(&cwd)?;
-    let container_name = config
-        .container_name
-        .clone()
-        .unwrap_or_else(|| format!("spawn-{}", config.project_name));
 
-    super::ensure_container_running(&container_name, &mut config, &cwd)?;
+    if verbose {
+        ui::verbose(&format!("Working directory: {}", cwd.display()));
+    }
+
+    migrate_if_needed(&cwd)?;
+
+    if verbose {
+        ui::verbose("Loading spawn config...");
+    }
+    let config = if SpawnConfig::exists(&cwd) {
+        SpawnConfig::load(&cwd)?
+    } else {
+        recover_config(&cwd)?
+    };
+
+    if verbose {
+        ui::verbose("Loading local state...");
+    }
+    let mut state = if LocalState::exists(&cwd) {
+        LocalState::load(&cwd)?
+    } else {
+        let s = LocalState::init(&config.project_name);
+        s.save(&cwd)?;
+        s
+    };
+
+    let container_name = state.container_name.clone();
+    if verbose {
+        ui::verbose(&format!("Container: {container_name}"));
+    }
+
+    super::ensure_container_running(&container_name, &mut state, &cwd, verbose)?;
 
     ui::info("Opening shell inside the container...");
+    if verbose {
+        ui::verbose(&format!(
+            "Exec: container exec -it -u claude {container_name} bash"
+        ));
+    }
 
-    docker::exec_interactive(&container_name, &["bash"], Some("claude"))?;
+    runtime::exec_interactive(&container_name, &["bash"], Some("claude"))?;
 
     ui::success("Shell session ended.");
 
