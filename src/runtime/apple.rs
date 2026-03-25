@@ -3,9 +3,9 @@ use std::process::{Command, Stdio};
 
 use super::{ContainerResult, BASE_IMAGE};
 
-pub const MIN_VERSION: &str = "0.7.0";
+pub const MIN_VERSION: &str = "0.10.0";
 
-/// Parse a version string like "0.7.0" or "container 0.7.0" into (major, minor, patch).
+/// Parse a version string like "0.10.0" or "container 0.10.0" into (major, minor, patch).
 fn parse_version(version_output: &str) -> Option<(u32, u32, u32)> {
     // Find the first substring that looks like major.minor.patch
     for word in version_output.split_whitespace() {
@@ -147,14 +147,14 @@ pub fn get_container_ip(container_name: &str) -> Result<String> {
         serde_json::from_str(&stdout).context("failed to parse container inspect output")?;
 
     // Apple Container inspect returns:
-    //   [{"networks": [{"address": "192.168.65.13/24", ...}], ...}]
+    //   [{"networks": [{"ipv4Address": "192.168.64.6/24", ...}], ...}]
     let addr = json
         .as_array()
         .and_then(|arr| arr.first())
         .and_then(|obj| obj.get("networks"))
         .and_then(|nets| nets.as_array())
         .and_then(|nets| nets.first())
-        .and_then(|net| net.get("address"))
+        .and_then(|net| net.get("ipv4Address"))
         .and_then(|a| a.as_str())
         .unwrap_or("");
 
@@ -174,21 +174,21 @@ mod tests {
 
     #[test]
     fn version_below_minimum() {
-        assert!(check_version("0.6.0").is_err());
+        assert!(check_version("0.9.0").is_err());
     }
 
     #[test]
     fn version_at_minimum() {
-        assert!(check_version("0.7.0").is_ok());
+        assert!(check_version("0.10.0").is_ok());
     }
 
     #[test]
     fn version_patch_above() {
-        assert!(check_version("0.7.1").is_ok());
+        assert!(check_version("0.10.1").is_ok());
     }
 
     #[test]
     fn version_minor_above() {
-        assert!(check_version("0.10.0").is_ok());
+        assert!(check_version("0.11.0").is_ok());
     }
 }
