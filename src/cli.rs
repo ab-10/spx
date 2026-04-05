@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 /// CLI that fully sets up a project for agentic development.
 #[derive(Parser)]
-#[command(name = "spawn", version, about)]
+#[command(name = "spx", version, about)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

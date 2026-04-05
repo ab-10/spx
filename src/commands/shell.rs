@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::env;
 
 use crate::cli::ShellArgs;
-use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
+use crate::config::{migrate_if_needed, recover_config, LocalState, SpxConfig};
 use crate::runtime;
 use crate::ui;
 
@@ -16,10 +16,10 @@ pub fn run(_args: ShellArgs, verbose: bool) -> Result<()> {
     migrate_if_needed(&cwd)?;
 
     if verbose {
-        ui::verbose("Loading spawn config...");
+        ui::verbose("Loading spx config...");
     }
-    let config = if SpawnConfig::exists(&cwd) {
-        SpawnConfig::load(&cwd)?
+    let config = if SpxConfig::exists(&cwd) {
+        SpxConfig::load(&cwd)?
     } else {
         recover_config(&cwd)?
     };

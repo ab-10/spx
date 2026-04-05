@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER_NAME="spawn-dev"
-DEV_IMAGE="spawn-dev:latest"
+CONTAINER_NAME="spx-dev"
+DEV_IMAGE="spx-dev:latest"
 SANDBOX_DIR="$HOME/.claude_sandbox"
 
 # --- Stop flow ---
@@ -54,7 +54,7 @@ if [[ -n "$STATUS" ]]; then
 fi
 
 # --- Build image if missing ---
-if ! container image list 2>/dev/null | grep -q "spawn-dev"; then
+if ! container image list 2>/dev/null | grep -q "spx-dev"; then
     echo "Building $DEV_IMAGE..."
     container build -t "$DEV_IMAGE" -f Dockerfile.dev .
 fi
@@ -62,6 +62,7 @@ fi
 # --- Run container ---
 echo "Starting $CONTAINER_NAME..."
 container run -d \
+    --memory 8g \
     --name "$CONTAINER_NAME" \
     --volume "$(pwd):/work" \
     --volume "$SANDBOX_DIR:/home/claude/.claude" \

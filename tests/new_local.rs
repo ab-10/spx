@@ -1,11 +1,11 @@
-//! Integration test for `spawn new --non-interactive`.
+//! Integration test for `spx new --non-interactive`.
 //!
 //! Runs the real binary against a real Apple Container runtime and verifies the
 //! side-effects: config file, scaffolded project, running container,
 //! bind mount, and user setup.
 //!
 //! Prerequisites: Apple Container CLI (`container`) must be available.
-//! The spawn-base image will be built automatically if not present.
+//! The spx-base image will be built automatically if not present.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -51,31 +51,31 @@ impl Drop for ContainerGuard {
 fn new_local_end_to_end() {
     require_container();
 
-    let project_name = format!("spawn-test-{}", std::process::id());
+    let project_name = format!("spx-test-{}", std::process::id());
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Run: spawn new --non-interactive <project_name>
-    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
-    let output = Command::new(spawn_bin)
+    // Run: spx new --non-interactive <project_name>
+    let spx_bin = env!("CARGO_BIN_EXE_spx");
+    let output = Command::new(spx_bin)
         .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
-        .expect("failed to run spawn binary");
+        .expect("failed to run spx binary");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
         output.status.success(),
-        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spx new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     let project_dir = tmp_dir.path().join(&project_name);
 
-    // 1a. spawn.config.json exists and has only project_name
-    let config_path = project_dir.join("spawn.config.json");
-    assert!(config_path.exists(), "spawn.config.json not created");
+    // 1a. spx.config.json exists and has only project_name
+    let config_path = project_dir.join("spx.config.json");
+    assert!(config_path.exists(), "spx.config.json not created");
 
     let config_text = std::fs::read_to_string(&config_path).expect("failed to read config");
     let config: serde_json::Value =
@@ -84,16 +84,16 @@ fn new_local_end_to_end() {
     assert_eq!(config["project_name"], project_name);
     assert!(
         config.get("container_id").is_none(),
-        "container_id should not be in spawn.config.json"
+        "container_id should not be in spx.config.json"
     );
     assert!(
         config.get("container_name").is_none(),
-        "container_name should not be in spawn.config.json"
+        "container_name should not be in spx.config.json"
     );
 
-    // 1b. .spawn/state.json exists with container_name, container_id, container_ip
-    let state_path = project_dir.join(".spawn").join("state.json");
-    assert!(state_path.exists(), ".spawn/state.json not created");
+    // 1b. .spx/state.json exists with container_name, container_id, container_ip
+    let state_path = project_dir.join(".spx").join("state.json");
+    assert!(state_path.exists(), ".spx/state.json not created");
 
     let state_text = std::fs::read_to_string(&state_path).expect("failed to read state");
     let state: serde_json::Value =
@@ -105,8 +105,8 @@ fn new_local_end_to_end() {
     );
     let container_name = state["container_name"].as_str().unwrap().to_string();
     assert!(
-        container_name.starts_with(&format!("spawn-{project_name}-")),
-        "container_name should start with spawn-{{project_name}}-: got {container_name}"
+        container_name.starts_with(&format!("spx-{project_name}-")),
+        "container_name should start with spx-{{project_name}}-: got {container_name}"
     );
     assert!(
         state["container_id"].is_string(),
@@ -122,13 +122,13 @@ fn new_local_end_to_end() {
         name: container_name.clone(),
     };
 
-    // 1c. .gitignore contains .spawn/
+    // 1c. .gitignore contains .spx/
     let gitignore_path = project_dir.join(".gitignore");
     assert!(gitignore_path.exists(), ".gitignore not found");
     let gitignore = std::fs::read_to_string(&gitignore_path).expect("failed to read .gitignore");
     assert!(
-        gitignore.contains(".spawn/"),
-        ".gitignore should contain .spawn/"
+        gitignore.contains(".spx/"),
+        ".gitignore should contain .spx/"
     );
 
     // 2. Next.js scaffold exists
@@ -163,11 +163,11 @@ fn new_local_end_to_end() {
     );
 
     // 4. Bind mount works: write on host, read inside container
-    let marker = "spawn-integration-test-marker";
-    std::fs::write(project_dir.join(".spawn-test"), marker).expect("failed to write marker file");
+    let marker = "spx-integration-test-marker";
+    std::fs::write(project_dir.join(".spx-test"), marker).expect("failed to write marker file");
     let (ok, cat_out, cat_err) = run_cmd(
         "container",
-        &["exec", &container_name, "cat", "/app/.spawn-test"],
+        &["exec", &container_name, "cat", "/app/.spx-test"],
     );
     assert!(
         ok,
@@ -186,7 +186,7 @@ fn new_local_end_to_end() {
         "unexpected node --version output: {node_out}"
     );
 
-    // 6. `spawn claude` precondition: exec as the claude user must work.
+    // 6. `spx claude` precondition: exec as the claude user must work.
     let (ok, whoami_out, whoami_err) = run_cmd(
         "container",
         &["exec", "-u", "claude", &container_name, "whoami"],
@@ -202,34 +202,34 @@ fn new_local_end_to_end() {
     );
 }
 
-/// After `spawn new`, running `spawn claude` must be able to
+/// After `spx new`, running `spx claude` must be able to
 /// exec into the container as the `claude` user.
 #[test]
 fn run_claude_after_new() {
     require_container();
 
-    let project_name = format!("spawn-test-run-{}", std::process::id());
+    let project_name = format!("spx-test-run-{}", std::process::id());
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Step 1: Run `spawn new --non-interactive`
-    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
-    let output = Command::new(spawn_bin)
+    // Step 1: Run `spx new --non-interactive`
+    let spx_bin = env!("CARGO_BIN_EXE_spx");
+    let output = Command::new(spx_bin)
         .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
-        .expect("failed to run spawn new");
+        .expect("failed to run spx new");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spx new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    // Read the container name from .spawn/state.json
+    // Read the container name from .spx/state.json
     let project_dir = tmp_dir.path().join(&project_name);
-    let state_text = std::fs::read_to_string(project_dir.join(".spawn/state.json"))
+    let state_text = std::fs::read_to_string(project_dir.join(".spx/state.json"))
         .expect("failed to read state");
     let state: serde_json::Value = serde_json::from_str(&state_text).expect("invalid state JSON");
     let container_name = state["container_name"].as_str().unwrap().to_string();
@@ -266,12 +266,12 @@ fn run_claude_after_new() {
 }
 
 /// Simulate a partial first run that crashes after scaffolding but before
-/// saving config, then verify that a second `spawn new` still succeeds.
+/// saving config, then verify that a second `spx new` still succeeds.
 #[test]
 fn new_retry_after_partial_failure() {
     require_container();
 
-    let project_name = format!("spawn-test-retry-{}", std::process::id());
+    let project_name = format!("spx-test-retry-{}", std::process::id());
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let project_dir = tmp_dir.path().join(&project_name);
@@ -288,23 +288,23 @@ fn new_retry_after_partial_failure() {
     .expect("failed to write next.config.ts");
 
     assert!(
-        !project_dir.join("spawn.config.json").exists(),
+        !project_dir.join("spx.config.json").exists(),
         "setup error: config should not exist yet"
     );
 
-    // --- Run spawn new (the retry) ---
-    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
-    let output = Command::new(spawn_bin)
+    // --- Run spx new (the retry) ---
+    let spx_bin = env!("CARGO_BIN_EXE_spx");
+    let output = Command::new(spx_bin)
         .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
-        .expect("failed to run spawn binary");
+        .expect("failed to run spx binary");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Read container name from state for cleanup
-    let state_path = project_dir.join(".spawn/state.json");
+    let state_path = project_dir.join(".spx/state.json");
     if state_path.exists() {
         let state_text = std::fs::read_to_string(&state_path).unwrap_or_default();
         if let Ok(state) = serde_json::from_str::<serde_json::Value>(&state_text) {
@@ -320,13 +320,13 @@ fn new_retry_after_partial_failure() {
 
     assert!(
         output.status.success(),
-        "spawn new should recover from a partial previous run, \
+        "spx new should recover from a partial previous run, \
          but it failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     assert!(
-        project_dir.join("spawn.config.json").exists(),
-        "spawn.config.json not created after retry"
+        project_dir.join("spx.config.json").exists(),
+        "spx.config.json not created after retry"
     );
     assert!(
         project_dir.join("package.json").exists(),
@@ -334,19 +334,19 @@ fn new_retry_after_partial_failure() {
     );
 }
 
-/// Verify that `spawn new` exits on its own and does NOT attach to the
+/// Verify that `spx new` exits on its own and does NOT attach to the
 /// container shell.
 #[test]
 fn new_does_not_attach_to_container() {
     require_container();
 
-    let project_name = format!("spawn-test-noattach-{}", std::process::id());
+    let project_name = format!("spx-test-noattach-{}", std::process::id());
 
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
+    let spx_bin = env!("CARGO_BIN_EXE_spx");
     let start = Instant::now();
-    let child = Command::new(spawn_bin)
+    let child = Command::new(spx_bin)
         .args(["new", &project_name])
         .current_dir(tmp_dir.path())
         // Pipe stdin so attach_shell can't read from our terminal
@@ -358,7 +358,7 @@ fn new_does_not_attach_to_container() {
 
     let output = child
         .wait_with_output()
-        .expect("failed to wait for spawn process");
+        .expect("failed to wait for spx process");
     let elapsed = start.elapsed();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -366,7 +366,7 @@ fn new_does_not_attach_to_container() {
 
     assert!(
         output.status.success(),
-        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spx new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     // The process should exit promptly after setup — not hang on attach_shell.
@@ -378,18 +378,18 @@ fn new_does_not_attach_to_container() {
     // stdout should NOT contain the "Dropping you into the container" message
     assert!(
         !stdout.contains("Dropping you into the container"),
-        "spawn new should not drop into the container shell.\nstdout:\n{stdout}"
+        "spx new should not drop into the container shell.\nstdout:\n{stdout}"
     );
 
     // Config should still be written correctly
     let project_dir = tmp_dir.path().join(&project_name);
     assert!(
-        project_dir.join("spawn.config.json").exists(),
-        "spawn.config.json not created"
+        project_dir.join("spx.config.json").exists(),
+        "spx.config.json not created"
     );
 
     // Clean up container using name from state
-    let state_path = project_dir.join(".spawn/state.json");
+    let state_path = project_dir.join(".spx/state.json");
     if state_path.exists() {
         let state_text = std::fs::read_to_string(&state_path).unwrap_or_default();
         if let Ok(state) = serde_json::from_str::<serde_json::Value>(&state_text) {

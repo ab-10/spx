@@ -1,8 +1,8 @@
-//! Integration test: verify the spawn container has a browser executable
+//! Integration test: verify the spx container has a browser executable
 //! that `gh auth login` can use to open the OAuth flow.
 //!
 //! `gh auth login` tries `xdg-open`, `x-www-browser`, `www-browser`, or
-//! `wslview`. The spawn-base image (node:20-bookworm) ships none of these,
+//! `wslview`. The spx-base image (node:20-bookworm) ships none of these,
 //! so the OAuth flow fails inside the container.
 //!
 //! This test replicates the bug by asserting that at least one of those
@@ -52,27 +52,27 @@ impl Drop for ContainerGuard {
 fn container_has_browser_for_gh_auth() {
     require_container();
 
-    let project_name = format!("spawn-test-ghauth-{}", std::process::id());
+    let project_name = format!("spx-test-ghauth-{}", std::process::id());
     let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Step 1: Create a real container via `spawn new --non-interactive`
-    let spawn_bin = env!("CARGO_BIN_EXE_spawn");
-    let output = Command::new(spawn_bin)
+    // Step 1: Create a real container via `spx new --non-interactive`
+    let spx_bin = env!("CARGO_BIN_EXE_spx");
+    let output = Command::new(spx_bin)
         .args(["new", "--non-interactive", &project_name])
         .current_dir(tmp_dir.path())
         .output()
-        .expect("failed to run spawn new");
+        .expect("failed to run spx new");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "spawn new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "spx new failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    // Read container name from .spawn/state.json
+    // Read container name from .spx/state.json
     let project_dir = tmp_dir.path().join(&project_name);
-    let state_text = std::fs::read_to_string(project_dir.join(".spawn/state.json"))
+    let state_text = std::fs::read_to_string(project_dir.join(".spx/state.json"))
         .expect("failed to read state");
     let state: serde_json::Value = serde_json::from_str(&state_text).expect("invalid state JSON");
     let container_name = state["container_name"].as_str().unwrap().to_string();
@@ -101,7 +101,7 @@ fn container_has_browser_for_gh_auth() {
         "None of the browser executables that `gh auth login` needs were found \
          in the container.\n\
          Checked: {browser_cmds:?}\n\
-         The spawn-base image must install at least one (e.g. `xdg-open` from \
+         The spx-base image must install at least one (e.g. `xdg-open` from \
          xdg-utils) so that `gh auth login` can complete the OAuth flow."
     );
 }

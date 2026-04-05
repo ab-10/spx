@@ -2,18 +2,18 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const CONFIG_FILE: &str = "spawn.config.json";
-const STATE_DIR: &str = ".spawn";
+const CONFIG_FILE: &str = "spx.config.json";
+const STATE_DIR: &str = ".spx";
 const STATE_FILE: &str = "state.json";
 
-// --- Shared, version-controlled config (spawn.config.json) ---
+// --- Shared, version-controlled config (spx.config.json) ---
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SpawnConfig {
+pub struct SpxConfig {
     pub project_name: String,
 }
 
-impl SpawnConfig {
+impl SpxConfig {
     pub fn load(dir: &Path) -> Result<Self> {
         let path = dir.join(CONFIG_FILE);
         let contents =
@@ -40,7 +40,7 @@ impl SpawnConfig {
     }
 }
 
-// --- Local, gitignored state (.spawn/state.json) ---
+// --- Local, gitignored state (.spx/state.json) ---
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalState {
@@ -91,7 +91,7 @@ impl LocalState {
     pub fn init(project_name: &str) -> Self {
         let suffix = petname::petname(3, "-").unwrap_or_else(|| "container".to_string());
         LocalState {
-            container_name: format!("spawn-{project_name}-{suffix}"),
+            container_name: format!("spx-{project_name}-{suffix}"),
             container_id: None,
             container_ip: None,
         }
@@ -100,7 +100,7 @@ impl LocalState {
 
 // --- Migration from old combined format ---
 
-/// If spawn.config.json contains `container_id` (old combined format),
+/// If spx.config.json contains `container_id` (old combined format),
 /// split it into the new two-file layout. Preserves the existing container_name
 /// so running containers aren't orphaned. Idempotent.
 pub fn migrate_if_needed(dir: &Path) -> Result<()> {
@@ -132,7 +132,7 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
         .get("container_name")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("spawn-{project_name}"));
+        .unwrap_or_else(|| format!("spx-{project_name}"));
 
     let container_id = raw.get("container_id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
@@ -143,44 +143,44 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
     };
     state.save(dir)?;
 
-    // Rewrite spawn.config.json with only project_name
-    let config = SpawnConfig { project_name };
+    // Rewrite spx.config.json with only project_name
+    let config = SpxConfig { project_name };
     config.save(dir)?;
 
-    ensure_gitignore_has_spawn(dir)?;
+    ensure_gitignore_has_spx(dir)?;
 
     Ok(())
 }
 
-/// Append `.spawn/` to .gitignore if not already present.
-pub fn ensure_gitignore_has_spawn(dir: &Path) -> Result<()> {
+/// Append `.spx/` to .gitignore if not already present.
+pub fn ensure_gitignore_has_spx(dir: &Path) -> Result<()> {
     let gitignore_path = dir.join(".gitignore");
     if gitignore_path.exists() {
         let contents = std::fs::read_to_string(&gitignore_path)?;
-        if contents.lines().any(|line| line.trim() == ".spawn/" || line.trim() == ".spawn") {
+        if contents.lines().any(|line| line.trim() == ".spx/" || line.trim() == ".spx") {
             return Ok(());
         }
         let mut new_contents = contents;
         if !new_contents.ends_with('\n') {
             new_contents.push('\n');
         }
-        new_contents.push_str(".spawn/\n");
+        new_contents.push_str(".spx/\n");
         std::fs::write(&gitignore_path, new_contents)?;
     } else {
-        std::fs::write(&gitignore_path, ".spawn/\n")?;
+        std::fs::write(&gitignore_path, ".spx/\n")?;
     }
     Ok(())
 }
 
-/// When no spawn.config.json exists but the directory looks like a project,
+/// When no spx.config.json exists but the directory looks like a project,
 /// derive project_name from the directory name and create the config.
-pub fn recover_config(dir: &Path) -> Result<SpawnConfig> {
+pub fn recover_config(dir: &Path) -> Result<SpxConfig> {
     let has_package_json = dir.join("package.json").exists();
     let has_git = dir.join(".git").exists();
 
     if !has_package_json && !has_git {
         anyhow::bail!(
-            "No spawn.config.json found and directory doesn't look like a project. Run `spawn new` first."
+            "No spx.config.json found and directory doesn't look like a project. Run `spx new` first."
         );
     }
 
@@ -190,9 +190,9 @@ pub fn recover_config(dir: &Path) -> Result<SpawnConfig> {
         .unwrap_or("unknown")
         .to_string();
 
-    let config = SpawnConfig { project_name };
+    let config = SpxConfig { project_name };
     config.save(dir)?;
-    ensure_gitignore_has_spawn(dir)?;
+    ensure_gitignore_has_spx(dir)?;
 
     Ok(config)
 }

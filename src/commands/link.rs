@@ -3,7 +3,7 @@ use std::env;
 use std::path::Path;
 
 use crate::cli::LinkArgs;
-use crate::config::{migrate_if_needed, recover_config, LocalState, SpawnConfig};
+use crate::config::{migrate_if_needed, recover_config, LocalState, SpxConfig};
 use crate::runtime;
 use crate::ui;
 
@@ -17,11 +17,11 @@ pub fn run(_args: LinkArgs, verbose: bool) -> Result<()> {
     migrate_if_needed(&cwd)?;
 
     if verbose {
-        ui::verbose("Loading spawn config...");
+        ui::verbose("Loading spx config...");
     }
-    let config = if SpawnConfig::exists(&cwd) {
-        SpawnConfig::load(&cwd)
-            .context("Failed to load spawn.config.json. Run `spawn new` first.")?
+    let config = if SpxConfig::exists(&cwd) {
+        SpxConfig::load(&cwd)
+            .context("Failed to load spx.config.json. Run `spx new` first.")?
     } else {
         recover_config(&cwd)?
     };
@@ -146,7 +146,7 @@ pub fn run(_args: LinkArgs, verbose: bool) -> Result<()> {
     ));
     ui::info("Vercel: deployment triggered on every push to main.");
 
-    ui::next_step("Run `spawn claude` to start building with Claude Code.");
+    ui::next_step("Run `spx claude` to start building with Claude Code.");
 
     Ok(())
 }

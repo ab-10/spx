@@ -69,13 +69,15 @@ pub fn ensure_apple_container() -> Result<()> {
 /// Apple containers get their own IP address — no port mapping needed.
 pub fn create_container(project_dir: &str, container_name: &str) -> Result<ContainerResult> {
     crate::ui::stream_header(&format!(
-        "container run -d --name {container_name} --volume {project_dir}:/app {BASE_IMAGE} sleep infinity"
+        "container run -d --memory 8g --name {container_name} --volume {project_dir}:/app {BASE_IMAGE} sleep infinity"
     ));
 
     let output = Command::new("container")
         .args([
             "run",
             "-d",
+            "--memory",
+            "8g",
             "--name",
             container_name,
             "--volume",

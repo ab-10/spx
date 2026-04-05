@@ -1,6 +1,6 @@
-# spawn
+# spx
 
-`spawn` sets up Docker container with an opinionated NextJS webapp setup.
+`spx` sets up Docker container with an opinionated NextJS webapp setup.
 This allows you to build with Claude Code (w/ `--dangerously-skip-permissions`) out of the box, with good feedback loops.
 
 
@@ -8,15 +8,15 @@ This allows you to build with Claude Code (w/ `--dangerously-skip-permissions`) 
 
 
 **Installation:**
-1. Get the latest pre-built binary [here](https://github.com/ab-10/spawn/releases)
+1. Get the latest pre-built binary [here](https://github.com/ab-10/spx/releases)
 2. Put it on your path (e.g. `~/.local/bin`)
 
 **Creating a project:**
 
 ```bash
-spawn new <project-name>
+spx new <project-name>
 cd <project-name>
-spawn claude
+spx claude
 ```
 
 This just did the following:
@@ -25,7 +25,7 @@ This just did the following:
 3. Ran Claude Code (in the sandbox) w/ `--dangerously-skip-permissions`
 
 
-Now you can give Claude Code detailed instructions for executing 
+Now you can give Claude Code detailed instructions for executing
 
 **Previewing your project:**
 
@@ -33,9 +33,9 @@ Ask Claude Code to run a development server, it should tell you the right port.
 
 If that fails:
 1. Message me, so I can fix it.
-2. Run `spawn shell`.
+2. Run `spx shell`.
 3. Inside of the shell run `npm run dev`
-4. Find the (host) port in `spawn.config.json` and open `localhost:{port}` in the browser.
+4. Find the (host) port in `spx.config.json` and open `localhost:{port}` in the browser.
     (The docker container maps port 3000 to 3000 or next available port on your machine).
 
 
@@ -57,16 +57,16 @@ We're opinionated about the decisions that don't affect your user experience.
 
 ## Usage
 
-### `spawn new [project-name]`
+### `spx new [project-name]`
 
 ```
-spawn new [project-name | defaults to dir name]
+spx new [project-name | defaults to dir name]
 ```
 
-1. Pulls spawn base Docker image (Next.js 14, Node 20, Playwright pre-installed).
+1. Pulls spx base Docker image (Next.js 14, Node 20, Playwright pre-installed).
 2. Scaffolds Next.js app with TypeScript, Tailwind, App Router — no prompts.
 3. Drops you into the running container.
-4. Pulls spawn base Docker image.
+4. Pulls spx base Docker image.
 5. Scaffolds Next.js app.
 6. Creates a local git repo
 7. Creates an initial commit
@@ -78,7 +78,7 @@ spawn new [project-name | defaults to dir name]
 3. Display appropriate connection URL for port found
 
 
-### `spawn link`
+### `spx link`
 
 1. Provisions Vercel Postgres and injects connection strings into `.env.local`.
 2. Syncs all env vars to Vercel (preview + prod).
@@ -86,10 +86,10 @@ spawn new [project-name | defaults to dir name]
 4. Sets up CD
 
 > **WIP:** System-level authentication config shared across projects.
-> For now, `spawn link` authenticates per-project.
+> For now, `spx link` authenticates per-project.
 
 
-### `spawn claude`
+### `spx claude`
 
 Launches an interactive Claude Code session inside the container in dangerous/auto-approve mode.
 
@@ -102,10 +102,10 @@ The agent has access to:
 
 | Command | What it does |
 |---|---|
-| `spawn new [name]` | Local scaffold only — cloud wiring deferred to first deploy |
-| `spawn link` | Wire project to GitHub + Vercel for continuous deployment |
-| `spawn claude` | Interactive Claude Code session inside the container |
-| `spawn shell` | Interactive shell inside the container |
+| `spx new [name]` | Local scaffold only — cloud wiring deferred to first deploy |
+| `spx link` | Wire project to GitHub + Vercel for continuous deployment |
+| `spx claude` | Interactive Claude Code session inside the container |
+| `spx shell` | Interactive shell inside the container |
 
 ### Global flags
 
@@ -126,7 +126,7 @@ The agent has access to:
 
 Tests should give the same confidence as running the real command manually. That means:
 
-- Integration tests run the actual `spawn` binary against real Docker — no mocks, no duplicate Dockerfiles.
+- Integration tests run the actual `spx` binary against real Docker — no mocks, no duplicate Dockerfiles.
 - Docker must be running. Tests fail fast with a clear message if it isn't.
 - We verify side effects of the real flow (config files on disk, container state, bind mounts, user permissions) rather than unit-testing internal functions against synthetic fixtures.
 - Network dependencies (npm registry, etc.) are accepted. A flaky network is a real failure mode worth knowing about.
@@ -140,7 +140,7 @@ cargo test --test new_local    # requires Docker
 
 - [ ] What are the limitations of using Vercel for deployment?
     At which stage do I need a direct interface with GCP?
-- [ ] `spawn new` vs `spawn new --local` flags.
+- [ ] `spx new` vs `spx new --local` flags.
     What's the cost of connecting deployment at `init`?
     Implement both ways and A/B test.
-- [ ] What's a good mechanism for implementing agent tools inside of the spawn environment?
+- [ ] What's a good mechanism for implementing agent tools inside of the spx environment?

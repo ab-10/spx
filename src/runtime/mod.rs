@@ -3,7 +3,7 @@ pub mod apple;
 use anyhow::{bail, Context, Result};
 use std::process::{Command, Stdio};
 
-pub const BASE_IMAGE: &str = "spawn-base:latest";
+pub const BASE_IMAGE: &str = "spx-base:latest";
 
 const BINARY: &str = "container";
 
@@ -21,7 +21,7 @@ pub fn ensure_available() -> Result<()> {
     apple::ensure_apple_container()
 }
 
-/// Pull the spawn base image.
+/// Pull the spx base image.
 pub fn pull_base_image() -> Result<()> {
     crate::ui::stream_header(&format!("{BINARY} pull {BASE_IMAGE}"));
     let status = Command::new(BINARY)
@@ -29,7 +29,7 @@ pub fn pull_base_image() -> Result<()> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .context("failed to pull spawn base image")?;
+        .context("failed to pull spx base image")?;
 
     if !status.success() {
         let check = Command::new(BINARY)
@@ -39,7 +39,7 @@ pub fn pull_base_image() -> Result<()> {
             .status()?;
         if !check.success() {
             bail!(
-                "spawn base image '{BASE_IMAGE}' not found. \
+                "spx base image '{BASE_IMAGE}' not found. \
                  Build it locally or ensure it is available in a registry."
             );
         }
@@ -50,7 +50,7 @@ pub fn pull_base_image() -> Result<()> {
     Ok(())
 }
 
-/// Build the spawn base image from a Dockerfile if it doesn't exist.
+/// Build the spx base image from a Dockerfile if it doesn't exist.
 pub fn build_base_image_if_missing() -> Result<()> {
     let check = Command::new(BINARY)
         .args(["image", "inspect", BASE_IMAGE])
@@ -62,7 +62,7 @@ pub fn build_base_image_if_missing() -> Result<()> {
         return Ok(());
     }
 
-    crate::ui::info("Building spawn base container image...");
+    crate::ui::info("Building spx base container image...");
 
     let dockerfile = r#"
 FROM node:20-bookworm
@@ -97,23 +97,23 @@ WORKDIR /app
 CMD ["bash"]
 "#;
 
-    let tmp_dir = std::env::temp_dir().join("spawn-image-build");
+    let tmp_dir = std::env::temp_dir().join("spx-image-build");
     std::fs::create_dir_all(&tmp_dir)?;
     std::fs::write(tmp_dir.join("Dockerfile"), dockerfile)?;
 
-    crate::ui::stream_header(&format!("{BINARY} build -t spawn-base:latest ."));
+    crate::ui::stream_header(&format!("{BINARY} build -t spx-base:latest ."));
     let status = Command::new(BINARY)
         .args(["build", "-t", BASE_IMAGE, "."])
         .current_dir(&tmp_dir)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .context("failed to build spawn base image")?;
+        .context("failed to build spx base image")?;
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     if !status.success() {
-        bail!("Failed to build spawn base container image.");
+        bail!("Failed to build spx base container image.");
     }
 
     Ok(())
@@ -345,10 +345,15 @@ pub fn start_container(container_name: &str) -> Result<()> {
 pub fn container_exists(container_name: &str) -> Result<bool> {
     let output = Command::new(BINARY)
         .args(["inspect", container_name])
-        .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()?;
-    Ok(output.success())
+        .output()?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    // Apple Containers returns exit 0 with "[]" for nonexistent containers
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    Ok(trimmed != "[]" && !trimmed.is_empty())
 }
 
 /// Stop and remove a container.
@@ -359,4 +364,18 @@ pub fn remove_container(container_name: &str) -> Result<()> {
         .stderr(Stdio::null())
         .status();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_exists_returns_false_for_nonexistent() {
+        // Apple Containers `inspect` returns exit 0 with "[]" for
+        // nonexistent containers. container_exists must not treat
+        // that as the container existing.
+        let result = container_exists("spx-nonexistent-test-container-00000").unwrap();
+        assert!(!result, "container_exists should return false for a nonexistent container");
+    }
 }

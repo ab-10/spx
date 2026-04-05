@@ -3,7 +3,7 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::cli::NewArgs;
-use crate::config::{ensure_gitignore_has_spawn, LocalState, SpawnConfig};
+use crate::config::{ensure_gitignore_has_spx, LocalState, SpxConfig};
 use crate::runtime;
 use crate::ui;
 
@@ -15,11 +15,11 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("Project directory: {}", project_dir.display()));
     }
 
-    if SpawnConfig::exists(&project_dir) {
+    if SpxConfig::exists(&project_dir) {
         bail!(
             "Project '{}' already exists. Config found at {}",
             project_name,
-            SpawnConfig::path(&project_dir).display()
+            SpxConfig::path(&project_dir).display()
         );
     }
 
@@ -32,7 +32,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     let total = 6;
 
     // Step 1: Container image
-    ui::step(1, total, "Pulling spawn base container image...");
+    ui::step(1, total, "Pulling spx base container image...");
     if verbose {
         ui::verbose("Checking Apple Container availability...");
     }
@@ -90,7 +90,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
 
     // Step 3: Save config (before git init so it's included in initial commit)
     ui::step(3, total, "Saving configuration...");
-    let config = SpawnConfig {
+    let config = SpxConfig {
         project_name: project_name.to_string(),
     };
     config.save(&project_dir)?;
@@ -99,19 +99,19 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     state.container_ip = Some(result.container_ip);
     state.save(&project_dir)?;
 
-    ensure_gitignore_has_spawn(&project_dir)?;
+    ensure_gitignore_has_spx(&project_dir)?;
 
     // Step 4: Git init
     ui::step(4, total, "Initializing git repository...");
     runtime::exec_in_container_as(&container_name, &["git", "init"], "claude")?;
     runtime::exec_in_container_as(
         &container_name,
-        &["git", "config", "user.email", "spawn@localhost"],
+        &["git", "config", "user.email", "spx@localhost"],
         "claude",
     )?;
     runtime::exec_in_container_as(
         &container_name,
-        &["git", "config", "user.name", "spawn"],
+        &["git", "config", "user.name", "spx"],
         "claude",
     )?;
 
@@ -120,7 +120,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     runtime::exec_in_container_as(&container_name, &["git", "add", "-A"], "claude")?;
     runtime::exec_in_container_as(
         &container_name,
-        &["git", "commit", "-m", "Initial commit from spawn"],
+        &["git", "commit", "-m", "Initial commit from spx"],
         "claude",
     )?;
 
@@ -142,7 +142,7 @@ pub fn run(args: NewArgs, verbose: bool) -> Result<()> {
     }
 
     ui::next_step(&format!(
-        "Run `cd {project_name} && spawn claude` to start an agent session."
+        "Run `cd {project_name} && spx claude` to start an agent session."
     ));
 
     Ok(())

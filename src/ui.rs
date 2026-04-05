@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-/// Print a step header (e.g. "[1/7] Pulling spawn base Docker image...")
+/// Print a step header (e.g. "[1/7] Pulling spx base Docker image...")
 pub fn step(current: usize, total: usize, message: &str) {
     eprintln!(
         "{} {}",
