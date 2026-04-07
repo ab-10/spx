@@ -49,6 +49,8 @@ pub struct LocalState {
     pub container_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_ip: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 impl LocalState {
@@ -94,6 +96,7 @@ impl LocalState {
             container_name: format!("spx-{project_name}-{suffix}"),
             container_id: None,
             container_ip: None,
+            user: None,
         }
     }
 }
@@ -140,6 +143,7 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
         container_name,
         container_id,
         container_ip: None,
+        user: None,
     };
     state.save(dir)?;
 

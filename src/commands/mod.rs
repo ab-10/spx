@@ -1,6 +1,7 @@
 pub mod claude;
 pub mod link;
 pub mod new;
+pub mod run;
 pub mod shell;
 
 use anyhow::Result;

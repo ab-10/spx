@@ -26,6 +26,8 @@ pub enum Command {
     Claude(ClaudeArgs),
     /// Open an interactive shell inside the container
     Shell(ShellArgs),
+    /// Sync the project diff to GCS and request a preview-env run
+    Run(RunArgs),
 }
 
 #[derive(Parser)]
@@ -62,6 +64,17 @@ pub struct ClaudeArgs {
 
 #[derive(Parser)]
 pub struct ShellArgs {
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Parser)]
+pub struct RunArgs {
+    /// Set the user identity for this project (persisted to .spx/state.json)
+    #[arg(long)]
+    pub user: Option<String>,
+
     /// Output as JSON
     #[arg(long)]
     pub json: bool,

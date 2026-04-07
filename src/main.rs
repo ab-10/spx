@@ -17,5 +17,6 @@ fn main() -> Result<()> {
         Command::Link(args) => commands::link::run(args, verbose),
         Command::Claude(args) => commands::claude::run(args, verbose),
         Command::Shell(args) => commands::shell::run(args, verbose),
+        Command::Run(args) => commands::run::run(args, verbose),
     }
 }
