@@ -232,11 +232,38 @@ fn post_run(
 
     match ureq::post(&url).send_json(payload) {
         Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, resp)) => bail!(
-            "POST {url} returned {code}: {}",
-            resp.into_string().unwrap_or_else(|_| "<no body>".into())
-        ),
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some((summary, output)) = parse_error_body(&body) {
+                ui::warn(&summary);
+                if let Some(output) = output {
+                    eprintln!("{output}");
+                }
+                std::process::exit(1);
+            }
+            bail!("POST {url} returned {code}: {body}");
+        }
         Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
+    }
+}
+
+/// Try to extract a readable error from the nested JSON error response.
+/// Returns (summary, optional process output), or None if parsing fails.
+fn parse_error_body(body: &str) -> Option<(String, Option<String>)> {
+    let outer: serde_json::Value = serde_json::from_str(body).ok()?;
+    let detail = outer.get("detail")?.as_str()?;
+
+    // detail looks like: "sidecar restart failed (500): {\"error\": \"...\"}"
+    let json_start = detail.find('{')?;
+    let inner: serde_json::Value = serde_json::from_str(&detail[json_start..]).ok()?;
+    let error = inner.get("error")?.as_str()?;
+
+    if let Some(idx) = error.find("\n--- process output ---\n") {
+        let summary = error[..idx].to_string();
+        let output = error[idx + 1..].to_string(); // keep the "--- process output ---" line
+        Some((summary, Some(output)))
+    } else {
+        Some((error.to_string(), None))
     }
 }
 
@@ -311,5 +338,39 @@ mod tests {
     fn parse_unknown_message_returns_none() {
         let line = "2026/04/05 08:48:06 INFO  : main.py: Renamed to foo.py";
         assert_eq!(parse_rclone_line(line), None);
+    }
+
+    #[test]
+    fn parse_error_body_with_process_output() {
+        let body = r#"{"detail":"sidecar restart failed (500): {\"error\": \"user process did not bind 127.0.0.1:8001 within 60.0s\\n--- process output ---\\nwarning: bad thing\\nerror: Failed to spawn: `main.py`\"}"}"#;
+        let (summary, output) = parse_error_body(body).unwrap();
+        assert_eq!(summary, "user process did not bind 127.0.0.1:8001 within 60.0s");
+        let output = output.unwrap();
+        assert!(output.starts_with("--- process output ---\n"));
+        assert!(output.contains("Failed to spawn"));
+    }
+
+    #[test]
+    fn parse_error_body_without_process_output() {
+        let body = r#"{"detail":"sidecar restart failed (500): {\"error\": \"something went wrong\"}"}"#;
+        let (summary, output) = parse_error_body(body).unwrap();
+        assert_eq!(summary, "something went wrong");
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn parse_error_body_invalid_json() {
+        assert!(parse_error_body("not json").is_none());
+    }
+
+    #[test]
+    fn parse_error_body_no_detail() {
+        assert!(parse_error_body(r#"{"other": "field"}"#).is_none());
+    }
+
+    #[test]
+    fn parse_error_body_no_inner_json() {
+        let body = r#"{"detail":"plain text error without json"}"#;
+        assert!(parse_error_body(body).is_none());
     }
 }
