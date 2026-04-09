@@ -1,7 +1,6 @@
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -10,6 +9,7 @@ use crate::config::{migrate_if_needed, recover_config, LocalState, SpxConfig};
 use crate::ui;
 
 const DEFAULT_API_URL: &str = "https://spx-api.runspx.com";
+const PROVISION_POLL_INTERVALS: &[u64] = &[5, 5, 10, 10, 15, 15, 20, 20, 30, 30];
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -49,18 +49,22 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     }
 
     ui::step(1, 2, &format!("Syncing project to gs://spx-{user}/app/"));
-    let (changed, deleted) = rclone_sync_and_parse(&cwd, &user, verbose)?;
-    ui::success(&format!(
-        "Sync complete — {} changed, {} deleted",
-        changed.len(),
-        deleted.len()
-    ));
+    rclone_sync(&cwd, &user, verbose)?;
+    ui::success("Sync complete.");
 
     ui::step(2, 2, "Requesting run on preview environment...");
-    post_run(&api_url, &user, &changed, &deleted, verbose)?;
-    ui::success("Run requested.");
+    let resp = post_run(&api_url, &user, verbose)?;
 
-    ui::next_step("Watch your preview environment logs to see the restart.");
+    let url = if resp.provisioning {
+        ui::info("First run — provisioning resources. This can take up to 5 minutes.");
+        poll_until_ready(&api_url, &user, verbose)?
+    } else {
+        resp.url
+    };
+
+    ui::success("Run requested.");
+    eprintln!();
+    eprintln!("  {}", ui::hyperlink(&url, &url));
 
     Ok(())
 }
@@ -101,19 +105,17 @@ fn ensure_rclone_available() -> Result<()> {
     }
 }
 
-fn rclone_sync_and_parse(
-    cwd: &Path,
-    user: &str,
-    verbose: bool,
-) -> Result<(Vec<String>, Vec<String>)> {
+fn rclone_sync(cwd: &Path, user: &str, verbose: bool) -> Result<()> {
     let bucket = format!("gs://spx-{user}/app/");
     let cmd_str = format!(
         "rclone sync . {bucket} --checksum --exclude .git/** --exclude __pycache__/** \
-         --exclude .venv/** --exclude .spx/** --log-level INFO"
+         --exclude .venv/** --exclude .spx/**"
     );
-    ui::stream_header(&cmd_str);
+    if verbose {
+        ui::stream_header(&cmd_str);
+    }
 
-    let mut child = Command::new("rclone")
+    let status = Command::new("rclone")
         .current_dir(cwd)
         .args([
             "sync",
@@ -128,102 +130,35 @@ fn rclone_sync_and_parse(
             ".venv/**",
             "--exclude",
             ".spx/**",
-            "--log-level",
-            "INFO",
         ])
         .stdout(Stdio::inherit())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::inherit())
+        .status()
         .context("failed to spawn rclone")?;
 
-    let stderr = child.stderr.take().expect("stderr captured");
-    let reader = BufReader::new(stderr);
-
-    let mut changed: Vec<String> = Vec::new();
-    let mut deleted: Vec<String> = Vec::new();
-
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-        let line = line.trim_end_matches('\r').to_string();
-        eprintln!("{line}");
-        if let Some(event) = parse_rclone_line(&line) {
-            if verbose {
-                ui::verbose(&format!("parsed: {event:?}"));
-            }
-            match event {
-                RcloneEvent::Copied(p) => changed.push(format!("app/{p}")),
-                RcloneEvent::Deleted(p) => deleted.push(p),
-            }
-        }
-    }
-
-    let status = child.wait().context("waiting for rclone")?;
     if !status.success() {
         let code = status.code().unwrap_or(-1);
         bail!("rclone exited with status {code}");
     }
 
-    Ok((changed, deleted))
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum RcloneEvent {
-    Copied(String),
-    Deleted(String),
-}
-
-/// Parse a single rclone INFO log line. Expected shape:
-///   `2026/04/05 08:48:06 INFO  : path/to/file: Copied (new)`
-fn parse_rclone_line(line: &str) -> Option<RcloneEvent> {
-    // Locate " INFO" so we can discard everything up to and including the
-    // log-level token and whitespace padding.
-    let after_info = line.split(" INFO").nth(1)?;
-    let after_info = after_info.trim_start();
-
-    // The next character is typically ':' separator after padding.
-    let rest = after_info.strip_prefix(':').unwrap_or(after_info);
-    let rest = rest.trim();
-
-    // `rest` should now look like "<path>: <message>" — split from the right
-    // so that paths containing ':' or spaces are preserved.
-    let (path, message) = rest.rsplit_once(": ")?;
-    let path = path.trim();
-    if path.is_empty() {
-        return None;
-    }
-
-    match message {
-        "Copied (new)" | "Copied (replaced existing)" => {
-            Some(RcloneEvent::Copied(path.to_string()))
-        }
-        "Deleted" => Some(RcloneEvent::Deleted(path.to_string())),
-        _ => None,
-    }
+    Ok(())
 }
 
 #[derive(Serialize)]
 struct RunRequest<'a> {
     user: &'a str,
-    changed: &'a [String],
-    deleted: &'a [String],
 }
 
-fn post_run(
-    api_url: &str,
-    user: &str,
-    changed: &[String],
-    deleted: &[String],
-    verbose: bool,
-) -> Result<()> {
+#[derive(Deserialize)]
+struct RunResponse {
+    url: String,
+    #[serde(default)]
+    provisioning: bool,
+}
+
+fn post_run(api_url: &str, user: &str, verbose: bool) -> Result<RunResponse> {
     let url = format!("{}/run", api_url.trim_end_matches('/'));
-    let body = RunRequest {
-        user,
-        changed,
-        deleted,
-    };
+    let body = RunRequest { user };
     let payload = serde_json::to_value(&body).context("serializing run request")?;
     if verbose {
         ui::verbose(&format!("POST {url}"));
@@ -231,7 +166,10 @@ fn post_run(
     }
 
     match ureq::post(&url).send_json(payload) {
-        Ok(_) => Ok(()),
+        Ok(resp) => {
+            let run_resp: RunResponse = resp.into_json().context("parsing run response")?;
+            Ok(run_resp)
+        }
         Err(ureq::Error::Status(code, resp)) => {
             let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
             if let Some((summary, output)) = parse_error_body(&body) {
@@ -245,6 +183,30 @@ fn post_run(
         }
         Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
     }
+}
+
+fn poll_until_ready(api_url: &str, user: &str, verbose: bool) -> Result<String> {
+    for delay in PROVISION_POLL_INTERVALS {
+        if verbose {
+            ui::verbose(&format!("Waiting {delay}s before retrying..."));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(*delay));
+
+        match post_run(api_url, user, verbose) {
+            Ok(resp) if !resp.provisioning => return Ok(resp.url),
+            Ok(_) => {
+                if verbose {
+                    ui::verbose("Still provisioning...");
+                }
+            }
+            Err(e) => {
+                if verbose {
+                    ui::verbose(&format!("Retry failed: {e}"));
+                }
+            }
+        }
+    }
+    bail!("Timed out waiting for environment to become ready. Try running `spx run` again.")
 }
 
 /// Try to extract a readable error from the nested JSON error response.
@@ -270,75 +232,6 @@ fn parse_error_body(body: &str) -> Option<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_copied_new() {
-        let line = "2026/04/05 08:48:06 INFO  : main.py: Copied (new)";
-        assert_eq!(
-            parse_rclone_line(line),
-            Some(RcloneEvent::Copied("main.py".into()))
-        );
-    }
-
-    #[test]
-    fn parse_copied_replaced() {
-        let line =
-            "2026/04/05 08:48:06 INFO  : routes/users.py: Copied (replaced existing)";
-        assert_eq!(
-            parse_rclone_line(line),
-            Some(RcloneEvent::Copied("routes/users.py".into()))
-        );
-    }
-
-    #[test]
-    fn parse_deleted() {
-        let line = "2026/04/05 08:48:06 INFO  : old_handler.py: Deleted";
-        assert_eq!(
-            parse_rclone_line(line),
-            Some(RcloneEvent::Deleted("old_handler.py".into()))
-        );
-    }
-
-    #[test]
-    fn parse_noise_returns_none() {
-        assert_eq!(parse_rclone_line(""), None);
-        assert_eq!(
-            parse_rclone_line(
-                "2026/04/05 08:48:06 INFO  : \n\
-                 Transferred:              0 B / 0 B, -, 0 B/s, ETA -"
-            ),
-            None
-        );
-        assert_eq!(
-            parse_rclone_line("2026/04/05 08:48:06 NOTICE : something happened"),
-            None
-        );
-    }
-
-    #[test]
-    fn parse_path_with_spaces() {
-        let line = "2026/04/05 08:48:06 INFO  : my notes/todo list.md: Copied (new)";
-        assert_eq!(
-            parse_rclone_line(line),
-            Some(RcloneEvent::Copied("my notes/todo list.md".into()))
-        );
-    }
-
-    #[test]
-    fn parse_path_with_colon() {
-        // rsplit_once(": ") preserves colons in the path segment.
-        let line = "2026/04/05 08:48:06 INFO  : weird:name.py: Copied (new)";
-        assert_eq!(
-            parse_rclone_line(line),
-            Some(RcloneEvent::Copied("weird:name.py".into()))
-        );
-    }
-
-    #[test]
-    fn parse_unknown_message_returns_none() {
-        let line = "2026/04/05 08:48:06 INFO  : main.py: Renamed to foo.py";
-        assert_eq!(parse_rclone_line(line), None);
-    }
 
     #[test]
     fn parse_error_body_with_process_output() {
