@@ -8,7 +8,7 @@ use crate::cli::RunArgs;
 use crate::config::{migrate_if_needed, recover_config, LocalState, SpxConfig};
 use crate::ui;
 
-const DEFAULT_API_URL: &str = "https://spx-api.runspx.com";
+const DEFAULT_API_URL: &str = "https://api.runspx.com";
 const PROVISION_POLL_INTERVALS: &[u64] = &[5, 5, 10, 10, 15, 15, 20, 20, 30, 30];
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
