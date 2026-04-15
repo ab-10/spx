@@ -1,7 +1,6 @@
 mod cli;
 mod commands;
 mod config;
-mod runtime;
 mod ui;
 
 use anyhow::Result;
@@ -13,10 +12,6 @@ fn main() -> Result<()> {
     let verbose = cli.verbose;
 
     match cli.command {
-        Command::New(args) => commands::new::run(args, verbose),
-        Command::Link(args) => commands::link::run(args, verbose),
-        Command::Claude(args) => commands::claude::run(args, verbose),
-        Command::Shell(args) => commands::shell::run(args, verbose),
         Command::Run(args) => commands::run::run(args, verbose),
     }
 }
