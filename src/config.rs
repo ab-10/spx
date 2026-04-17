@@ -31,10 +31,6 @@ impl SpxConfig {
         Ok(())
     }
 
-    pub fn path(dir: &Path) -> PathBuf {
-        dir.join(CONFIG_FILE)
-    }
-
     pub fn exists(dir: &Path) -> bool {
         dir.join(CONFIG_FILE).exists()
     }
@@ -51,13 +47,6 @@ pub struct LocalState {
     pub container_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-}
-
-impl LocalState {
-    /// Get the dev server URL label (e.g. "192.168.1.2:3000").
-    pub fn dev_url(&self) -> Option<String> {
-        self.container_ip.as_ref().map(|ip| format!("{ip}:3000"))
-    }
 }
 
 impl LocalState {

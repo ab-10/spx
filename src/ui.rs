@@ -24,12 +24,6 @@ pub fn info(message: &str) {
     eprintln!("{} {}", "→".bold().blue(), message);
 }
 
-/// Print a "next step" hint — shown after every command per design principles.
-pub fn next_step(message: &str) {
-    eprintln!();
-    eprintln!("{} {}", "Next:".bold().green(), message);
-}
-
 /// Render a clickable URL using OSC 8 hyperlinks for modern terminals.
 pub fn hyperlink(url: &str, label: &str) -> String {
     format!("\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\")
