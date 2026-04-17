@@ -2,7 +2,7 @@
 name = "spx"
 version = "0.1.1"
 edition = "2024"
-description = "CLI that fully sets up a project for agentic development"
+description = "Execute a FastAPI web server in an ephemeral deployment at a comparable speed to local interpreter run."
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
