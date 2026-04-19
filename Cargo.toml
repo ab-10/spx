@@ -12,6 +12,8 @@ anyhow = "1"
 colored = "3"
 petname = "2"
 ureq = { version = "2", features = ["json"] }
+dirs = "6"
+open = "5"
 
 [dev-dependencies]
 tempfile = "3"

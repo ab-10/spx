@@ -1,3 +1,6 @@
+// Legacy local state and migration helpers. Some functions are unused after
+// the auth cutover but kept for potential future migration paths.
+#![allow(dead_code)]
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

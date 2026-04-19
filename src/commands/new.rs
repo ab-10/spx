@@ -6,16 +6,16 @@ use std::process::{Command, Stdio};
 use crate::cli::NewArgs;
 use crate::commands::api;
 use crate::config::LocalState;
+use crate::credentials::Credentials;
 use crate::ui;
 
 pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     let name = &args.name;
-    let user = args.user.trim();
 
     validate_name(name)?;
-    if user.is_empty() {
-        bail!("--user cannot be empty");
-    }
+
+    let creds = Credentials::require()?;
+    let user = &creds.username;
 
     let cwd = env::current_dir()?;
     let project_dir = cwd.join(name);
@@ -35,8 +35,7 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     write_main_py(&project_dir, name)?;
     write_gitignore(&project_dir)?;
 
-    let mut state = LocalState::init(name);
-    state.user = Some(user.to_string());
+    let state = LocalState::init(name);
     state.save(&project_dir)?;
 
     ui::success("Project files created.");
@@ -68,11 +67,11 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("Control plane: {api_url}"));
     }
 
-    let resp = api::post_run(&api_url, user, verbose)?;
+    let resp = api::post_run(&api_url, &creds.token, verbose)?;
 
     let url = if resp.provisioning {
         ui::info("First run — provisioning resources. This can take up to 5 minutes.");
-        api::poll_until_ready(&api_url, user, verbose)?
+        api::poll_until_ready(&api_url, &creds.token, verbose)?
     } else {
         resp.url
     };

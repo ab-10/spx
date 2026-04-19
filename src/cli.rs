@@ -22,14 +22,12 @@ pub enum Command {
     Run(RunArgs),
     /// Create a new spx project with FastAPI scaffolding
     New(NewArgs),
+    /// Authenticate with GitHub
+    Login,
 }
 
 #[derive(Parser)]
 pub struct RunArgs {
-    /// Set the user identity for this project (persisted to .spx/state.json)
-    #[arg(long)]
-    pub user: Option<String>,
-
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -39,8 +37,4 @@ pub struct RunArgs {
 pub struct NewArgs {
     /// Name for the new project (becomes the directory name)
     pub name: String,
-
-    /// Set the user identity (required)
-    #[arg(long)]
-    pub user: String,
 }

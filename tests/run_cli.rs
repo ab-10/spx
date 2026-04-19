@@ -1,32 +1,30 @@
 //! Integration tests for `spx run`.
 //!
 //! No network or GCS required: these tests exercise only the local half of
-//! the pipeline (user resolution, state persistence, and the rclone
-//! availability probe).
+//! the pipeline (credential loading and the rclone availability probe).
 
 use std::process::Command;
 
-/// Minimal project fixture with .spx/state.json so `spx run` doesn't try to
-/// scaffold from scratch.
-fn make_project(dir: &std::path::Path, name: &str) {
-    let spx_dir = dir.join(".spx");
-    std::fs::create_dir_all(&spx_dir).expect("create .spx dir");
+/// Write a fake credentials file so `spx run` gets past the auth check.
+fn write_fake_credentials(home: &std::path::Path) {
+    let spx_dir = home.join(".spx");
+    std::fs::create_dir_all(&spx_dir).expect("create ~/.spx dir");
     std::fs::write(
-        spx_dir.join("state.json"),
-        format!("{{\"project_name\":\"{name}\",\"container_name\":\"spx-{name}-test\"}}\n"),
+        spx_dir.join("credentials.json"),
+        r#"{"username":"testuser","token":"fake-token"}"#,
     )
-    .expect("write .spx/state.json");
+    .expect("write credentials.json");
 }
 
 #[test]
-fn user_missing_fails_cleanly() {
+fn not_logged_in_fails_cleanly() {
     let tmp_dir = tempfile::tempdir().expect("tempdir");
-    make_project(tmp_dir.path(), "demo");
 
     let spx_bin = env!("CARGO_BIN_EXE_spx");
     let output = Command::new(spx_bin)
         .args(["run"])
         .current_dir(tmp_dir.path())
+        .env("HOME", tmp_dir.path())  // no credentials.json here
         .output()
         .expect("run spx");
 
@@ -34,54 +32,21 @@ fn user_missing_fails_cleanly() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("--user"),
-        "stderr should tell the user to pass --user; got:\n{stderr}"
-    );
-}
-
-#[test]
-fn user_flag_persists_to_state() {
-    let tmp_dir = tempfile::tempdir().expect("tempdir");
-    make_project(tmp_dir.path(), "demo");
-
-    let spx_bin = env!("CARGO_BIN_EXE_spx");
-    // Force rclone probe to fail so we exit after resolving/saving the user.
-    let output = Command::new(spx_bin)
-        .args(["run", "--user", "alice"])
-        .current_dir(tmp_dir.path())
-        .env("PATH", "/nonexistent")
-        .output()
-        .expect("run spx");
-
-    // Command is expected to fail because rclone cannot be found.
-    assert!(
-        !output.status.success(),
-        "expected failure due to missing rclone"
-    );
-
-    let state_path = tmp_dir.path().join(".spx").join("state.json");
-    assert!(
-        state_path.exists(),
-        ".spx/state.json should have been created"
-    );
-    let state_text = std::fs::read_to_string(&state_path).expect("read state");
-    let state: serde_json::Value = serde_json::from_str(&state_text).expect("parse state");
-    assert_eq!(
-        state["user"].as_str(),
-        Some("alice"),
-        "user field should be persisted; got state: {state_text}"
+        stderr.contains("spx login"),
+        "stderr should tell the user to run `spx login`; got:\n{stderr}"
     );
 }
 
 #[test]
 fn missing_rclone_fails_cleanly() {
     let tmp_dir = tempfile::tempdir().expect("tempdir");
-    make_project(tmp_dir.path(), "demo");
+    write_fake_credentials(tmp_dir.path());
 
     let spx_bin = env!("CARGO_BIN_EXE_spx");
     let output = Command::new(spx_bin)
-        .args(["run", "--user", "bob"])
+        .args(["run"])
         .current_dir(tmp_dir.path())
+        .env("HOME", tmp_dir.path())
         .env("PATH", "/nonexistent")
         .output()
         .expect("run spx");

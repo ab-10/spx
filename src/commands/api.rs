@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::env;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -68,11 +68,6 @@ pub fn rclone_sync(cwd: &Path, user: &str, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-#[derive(Serialize)]
-pub struct RunRequest<'a> {
-    pub user: &'a str,
-}
-
 #[derive(Deserialize)]
 pub struct RunResponse {
     pub url: String,
@@ -80,21 +75,26 @@ pub struct RunResponse {
     pub provisioning: bool,
 }
 
-pub fn post_run(api_url: &str, user: &str, verbose: bool) -> Result<RunResponse> {
+pub fn post_run(api_url: &str, token: &str, verbose: bool) -> Result<RunResponse> {
     let url = format!("{}/run", api_url.trim_end_matches('/'));
-    let body = RunRequest { user };
-    let payload = serde_json::to_value(&body).context("serializing run request")?;
     if verbose {
         ui::verbose(&format!("POST {url}"));
-        ui::verbose(&format!("body: {payload}"));
     }
 
-    match ureq::post(&url).send_json(payload) {
+    match ureq::post(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .send_json(serde_json::json!({}))
+    {
         Ok(resp) => {
             let run_resp: RunResponse = resp.into_json().context("parsing run response")?;
             Ok(run_resp)
         }
         Err(ureq::Error::Status(code, resp)) => {
+            if code == 401 || code == 403 {
+                bail!(
+                    "session invalid or expired. Run `spx login` to re-authenticate."
+                );
+            }
             let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
             if let Some((summary, output)) = parse_error_body(&body) {
                 ui::warn(&summary);
@@ -109,14 +109,14 @@ pub fn post_run(api_url: &str, user: &str, verbose: bool) -> Result<RunResponse>
     }
 }
 
-pub fn poll_until_ready(api_url: &str, user: &str, verbose: bool) -> Result<String> {
+pub fn poll_until_ready(api_url: &str, token: &str, verbose: bool) -> Result<String> {
     for delay in PROVISION_POLL_INTERVALS {
         if verbose {
             ui::verbose(&format!("Waiting {delay}s before retrying..."));
         }
         std::thread::sleep(std::time::Duration::from_secs(*delay));
 
-        match post_run(api_url, user, verbose) {
+        match post_run(api_url, token, verbose) {
             Ok(resp) if !resp.provisioning => return Ok(resp.url),
             Ok(_) => {
                 if verbose {
