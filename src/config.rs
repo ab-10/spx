@@ -2,44 +2,15 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const CONFIG_FILE: &str = "spx.config.json";
+const OLD_CONFIG_FILE: &str = "spx.config.json";
 const STATE_DIR: &str = ".spx";
 const STATE_FILE: &str = "state.json";
-
-// --- Shared, version-controlled config (spx.config.json) ---
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SpxConfig {
-    pub project_name: String,
-}
-
-impl SpxConfig {
-    pub fn load(dir: &Path) -> Result<Self> {
-        let path = dir.join(CONFIG_FILE);
-        let contents =
-            std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        let config: Self =
-            serde_json::from_str(&contents).with_context(|| format!("parsing {}", path.display()))?;
-        Ok(config)
-    }
-
-    pub fn save(&self, dir: &Path) -> Result<()> {
-        let path = dir.join(CONFIG_FILE);
-        let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("writing {}", path.display()))?;
-        Ok(())
-    }
-
-    pub fn exists(dir: &Path) -> bool {
-        dir.join(CONFIG_FILE).exists()
-    }
-}
 
 // --- Local, gitignored state (.spx/state.json) ---
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalState {
+    pub project_name: String,
     pub container_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
@@ -82,6 +53,7 @@ impl LocalState {
     pub fn init(project_name: &str) -> Self {
         let suffix = petname::petname(3, "-").unwrap_or_else(|| "container".to_string());
         LocalState {
+            project_name: project_name.to_string(),
             container_name: format!("spx-{project_name}-{suffix}"),
             container_id: None,
             container_ip: None,
@@ -90,59 +62,77 @@ impl LocalState {
     }
 }
 
-// --- Migration from old combined format ---
+// --- Migration from old formats ---
 
-/// If spx.config.json contains `container_id` (old combined format),
-/// split it into the new two-file layout. Preserves the existing container_name
-/// so running containers aren't orphaned. Idempotent.
+/// Migrate old config layouts into the current single-file `.spx/state.json`.
+///
+/// Handles two legacy formats:
+/// 1. Combined format: `spx.config.json` with `container_id` (very old)
+/// 2. Two-file format: `spx.config.json` + `.spx/state.json` (previous)
+///
+/// After migration, `spx.config.json` is deleted. Idempotent.
 pub fn migrate_if_needed(dir: &Path) -> Result<()> {
-    if LocalState::exists(dir) {
+    let old_config_path = dir.join(OLD_CONFIG_FILE);
+    if !old_config_path.exists() {
         return Ok(());
     }
 
-    let config_path = dir.join(CONFIG_FILE);
-    if !config_path.exists() {
-        return Ok(());
-    }
-
-    let contents = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("reading {}", config_path.display()))?;
+    let contents = std::fs::read_to_string(&old_config_path)
+        .with_context(|| format!("reading {}", old_config_path.display()))?;
     let raw: serde_json::Value = serde_json::from_str(&contents)
-        .with_context(|| format!("parsing {}", config_path.display()))?;
-
-    // Only migrate if old format (has container_id key)
-    if raw.get("container_id").is_none() {
-        return Ok(());
-    }
+        .with_context(|| format!("parsing {}", old_config_path.display()))?;
 
     let project_name = raw["project_name"]
         .as_str()
         .unwrap_or("unknown")
         .to_string();
 
-    let container_name = raw
-        .get("container_name")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("spx-{project_name}"));
+    if LocalState::exists(dir) {
+        // Two-file format: state.json exists but may lack project_name.
+        let mut state = LocalState::load(dir)?;
+        if !state_has_project_name(dir)? {
+            state.project_name = project_name;
+            state.save(dir)?;
+        }
+    } else if raw.get("container_id").is_some() {
+        // Very old combined format: everything in spx.config.json.
+        let container_name = raw
+            .get("container_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("spx-{project_name}"));
+        let container_id = raw.get("container_id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-    let container_id = raw.get("container_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let state = LocalState {
+            project_name,
+            container_name,
+            container_id,
+            container_ip: None,
+            user: None,
+        };
+        state.save(dir)?;
+        ensure_gitignore_has_spx(dir)?;
+    } else {
+        // spx.config.json exists but no state.json and no container_id —
+        // just a bare config. Create state from it.
+        let state = LocalState::init(&project_name);
+        state.save(dir)?;
+        ensure_gitignore_has_spx(dir)?;
+    }
 
-    let state = LocalState {
-        container_name,
-        container_id,
-        container_ip: None,
-        user: None,
-    };
-    state.save(dir)?;
-
-    // Rewrite spx.config.json with only project_name
-    let config = SpxConfig { project_name };
-    config.save(dir)?;
-
-    ensure_gitignore_has_spx(dir)?;
+    // Remove the old config file.
+    std::fs::remove_file(&old_config_path)
+        .with_context(|| format!("removing {}", old_config_path.display()))?;
 
     Ok(())
+}
+
+/// Check whether the existing state.json already has a `project_name` field.
+fn state_has_project_name(dir: &Path) -> Result<bool> {
+    let path = dir.join(STATE_DIR).join(STATE_FILE);
+    let contents = std::fs::read_to_string(&path)?;
+    let raw: serde_json::Value = serde_json::from_str(&contents)?;
+    Ok(raw.get("project_name").is_some())
 }
 
 /// Append `.spx/` to .gitignore if not already present.
@@ -165,15 +155,15 @@ pub fn ensure_gitignore_has_spx(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// When no spx.config.json exists but the directory looks like a project,
-/// derive project_name from the directory name and create the config.
-pub fn recover_config(dir: &Path) -> Result<SpxConfig> {
+/// When no `.spx/state.json` exists but the directory looks like a project,
+/// derive project_name from the directory name and create state.
+pub fn recover_state(dir: &Path) -> Result<LocalState> {
     let has_package_json = dir.join("package.json").exists();
     let has_git = dir.join(".git").exists();
 
     if !has_package_json && !has_git {
         anyhow::bail!(
-            "No spx.config.json found and directory doesn't look like a project. Run `spx new` first."
+            "No .spx/state.json found and directory doesn't look like a project. Run `spx new` first."
         );
     }
 
@@ -183,9 +173,9 @@ pub fn recover_config(dir: &Path) -> Result<SpxConfig> {
         .unwrap_or("unknown")
         .to_string();
 
-    let config = SpxConfig { project_name };
-    config.save(dir)?;
+    let state = LocalState::init(&project_name);
+    state.save(dir)?;
     ensure_gitignore_has_spx(dir)?;
 
-    Ok(config)
+    Ok(state)
 }

@@ -13,5 +13,6 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Run(args) => commands::run::run(args, verbose),
+        Command::New(args) => commands::new::new_project(args, verbose),
     }
 }

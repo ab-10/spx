@@ -20,6 +20,8 @@ pub struct Cli {
 pub enum Command {
     /// Sync the project diff to GCS and request a preview-env run
     Run(RunArgs),
+    /// Create a new spx project with FastAPI scaffolding
+    New(NewArgs),
 }
 
 #[derive(Parser)]
@@ -31,4 +33,14 @@ pub struct RunArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Parser)]
+pub struct NewArgs {
+    /// Name for the new project (becomes the directory name)
+    pub name: String,
+
+    /// Set the user identity (required)
+    #[arg(long)]
+    pub user: String,
 }

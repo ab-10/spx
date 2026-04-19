@@ -6,14 +6,16 @@
 
 use std::process::Command;
 
-/// Minimal project fixture with an existing spx.config.json so `spx run`
-/// doesn't try to scaffold from scratch.
+/// Minimal project fixture with .spx/state.json so `spx run` doesn't try to
+/// scaffold from scratch.
 fn make_project(dir: &std::path::Path, name: &str) {
+    let spx_dir = dir.join(".spx");
+    std::fs::create_dir_all(&spx_dir).expect("create .spx dir");
     std::fs::write(
-        dir.join("spx.config.json"),
-        format!("{{\"project_name\":\"{name}\"}}\n"),
+        spx_dir.join("state.json"),
+        format!("{{\"project_name\":\"{name}\",\"container_name\":\"spx-{name}-test\"}}\n"),
     )
-    .expect("write spx.config.json");
+    .expect("write .spx/state.json");
 }
 
 #[test]
