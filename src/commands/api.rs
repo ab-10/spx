@@ -32,8 +32,8 @@ pub fn ensure_rclone_available() -> Result<()> {
 pub fn rclone_sync(cwd: &Path, user: &str, verbose: bool) -> Result<()> {
     let bucket = format!("gs://spx-{user}/app/");
     let cmd_str = format!(
-        "rclone sync . {bucket} --checksum --exclude .git/** --exclude __pycache__/** \
-         --exclude .venv/** --exclude .spx/**"
+        "rclone sync . {bucket} --checksum --gcs-bucket-policy-only \
+         --exclude .git/** --exclude __pycache__/** --exclude .venv/** --exclude .spx/**"
     );
     if verbose {
         ui::stream_header(&cmd_str);
@@ -46,6 +46,7 @@ pub fn rclone_sync(cwd: &Path, user: &str, verbose: bool) -> Result<()> {
             ".",
             &bucket,
             "--checksum",
+            "--gcs-bucket-policy-only",
             "--exclude",
             ".git/**",
             "--exclude",
