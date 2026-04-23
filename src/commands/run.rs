@@ -14,36 +14,25 @@ pub fn run(_args: RunArgs, verbose: bool) -> Result<()> {
     }
 
     let creds = Credentials::require()?;
-    let user = &creds.username;
-
-    if verbose {
-        ui::verbose(&format!("User: {user}"));
-    }
-
-    api::ensure_rclone_available()?;
 
     let api_url = api::api_url();
     if verbose {
         ui::verbose(&format!("Control plane: {api_url}"));
     }
 
-    ui::step(1, 2, &format!("Syncing project to gs://spx-{user}/app/"));
-    api::rclone_sync(&cwd, user, verbose)?;
-    ui::success("Sync complete.");
+    ui::step(1, 2, "Packaging project...");
+    let archive = api::create_archive(&cwd)?;
+    if verbose {
+        ui::verbose(&format!("Archive size: {} bytes", archive.len()));
+    }
+    ui::success("Project packaged.");
 
-    ui::step(2, 2, "Requesting run on preview environment...");
-    let resp = api::post_run(&api_url, &creds.token, verbose)?;
+    ui::step(2, 2, "Deploying...");
+    let resp = api::post_run(&api_url, &creds.token, &archive, verbose)?;
 
-    let url = if resp.provisioning {
-        ui::info("First run — provisioning resources. This can take up to 5 minutes.");
-        api::poll_until_ready(&api_url, &creds.token, verbose)?
-    } else {
-        resp.url
-    };
-
-    ui::success("Run requested.");
+    ui::success("Deployed.");
     eprintln!();
-    eprintln!("  {}", ui::hyperlink(&url, &url));
+    eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
 
     Ok(())
 }

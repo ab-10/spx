@@ -11,6 +11,8 @@ serde_json = "1"
 anyhow = "1"
 colored = "3"
 petname = "2"
+tar = "0.4"
+flate2 = "1"
 ureq = { version = "2", features = ["json"] }
 dirs = "6"
 open = "5"

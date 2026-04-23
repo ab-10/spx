@@ -15,7 +15,6 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     validate_name(name)?;
 
     let creds = Credentials::require()?;
-    let user = &creds.username;
 
     let cwd = env::current_dir()?;
     let project_dir = cwd.join(name);
@@ -24,7 +23,7 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         bail!("Directory '{}' already exists", name);
     }
 
-    let total_steps = 6;
+    let total_steps = 4;
 
     // 1. Create project directory and write scaffolding files
     ui::step(1, total_steps, "Scaffolding project...");
@@ -50,35 +49,23 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     run_command("uv", &["sync"], &project_dir, verbose)?;
     ui::success("Dependencies installed.");
 
-    // 4. Check rclone
-    ui::step(4, total_steps, "Checking rclone...");
-    api::ensure_rclone_available()?;
-    ui::success("rclone available.");
+    // 4. Package and deploy
+    ui::step(4, total_steps, "Deploying...");
+    let archive = api::create_archive(&project_dir)?;
+    if verbose {
+        ui::verbose(&format!("Archive size: {} bytes", archive.len()));
+    }
 
-    // 5. rclone sync
-    ui::step(5, total_steps, &format!("Syncing project to gs://spx-{user}/app/"));
-    api::rclone_sync(&project_dir, user, verbose)?;
-    ui::success("Sync complete.");
-
-    // 6. POST /run
-    ui::step(6, total_steps, "Requesting run on preview environment...");
     let api_url = api::api_url();
     if verbose {
         ui::verbose(&format!("Control plane: {api_url}"));
     }
 
-    let resp = api::post_run(&api_url, &creds.token, verbose)?;
+    let resp = api::post_run(&api_url, &creds.token, &archive, verbose)?;
 
-    let url = if resp.provisioning {
-        ui::info("First run — provisioning resources. This can take up to 5 minutes.");
-        api::poll_until_ready(&api_url, &creds.token, verbose)?
-    } else {
-        resp.url
-    };
-
-    ui::success("Run requested.");
+    ui::success("Deployed.");
     eprintln!();
-    eprintln!("  {}", ui::hyperlink(&url, &url));
+    eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
     eprintln!();
     ui::info(&format!("cd {name} to start working on your project."));
 

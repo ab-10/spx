@@ -18,7 +18,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Sync the project diff to GCS and request a preview-env run
+    /// Package and deploy the project to a preview environment
     Run(RunArgs),
     /// Create a new spx project with FastAPI scaffolding
     New(NewArgs),
