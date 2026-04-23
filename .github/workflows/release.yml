@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../spx-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz spx
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spx-${{ matrix.target }}
+          path: spx-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            spx-aarch64-apple-darwin/*.tar.gz
+            spx-x86_64-apple-darwin/*.tar.gz
+          generate_release_notes: true
+
+  update-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Compute SHA256 checksums
+        id: sha
+        run: |
+          arm64_sha=$(sha256sum spx-aarch64-apple-darwin/*.tar.gz | awk '{print $1}')
+          x86_64_sha=$(sha256sum spx-x86_64-apple-darwin/*.tar.gz | awk '{print $1}')
+          echo "arm64=$arm64_sha" >> "$GITHUB_OUTPUT"
+          echo "x86_64=$x86_64_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-spx tap
+        uses: actions/checkout@v4
+        with:
+          repository: ab-10/homebrew-spx
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-spx
+
+      - name: Update formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARM64_SHA: ${{ steps.sha.outputs.arm64 }}
+          X86_64_SHA: ${{ steps.sha.outputs.x86_64 }}
+        run: |
+          cat > homebrew-spx/Formula/spx.rb <<EOF
+          class Spx < Formula
+            desc "CLI for scaffolding and deploying FastAPI apps to ephemeral previews"
+            homepage "https://github.com/ab-10/spx"
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/ab-10/spx/releases/download/v${VERSION}/spx-${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_SHA}"
+              end
+              on_intel do
+                url "https://github.com/ab-10/spx/releases/download/v${VERSION}/spx-${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${X86_64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "spx"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/spx --version")
+            end
+          end
+          EOF
+          # Strip leading whitespace from heredoc
+          sed -i 's/^          //' homebrew-spx/Formula/spx.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-spx
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/spx.rb
+          git commit -m "Update spx to ${{ steps.version.outputs.version }}"
+          git push
