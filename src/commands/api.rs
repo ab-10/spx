@@ -99,7 +99,7 @@ pub fn build_multipart_body(archive: &[u8]) -> (String, Vec<u8>) {
 pub struct RunResponse {
     pub url: String,
     #[allow(dead_code)]
-    pub user: String,
+    pub username: String,
 }
 
 pub fn post_run(api_url: &str, token: &str, archive: &[u8], verbose: bool) -> Result<RunResponse> {
