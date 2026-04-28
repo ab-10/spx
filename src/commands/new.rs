@@ -128,8 +128,7 @@ dependencies = [
 
 fn write_main_py(dir: &Path, name: &str) -> Result<()> {
     let content = format!(
-        r#"import os
-import uvicorn
+        r#"import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
