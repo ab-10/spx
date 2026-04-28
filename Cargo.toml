@@ -1,6 +1,6 @@
 [package]
 name = "spx"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Execute a FastAPI web server in an ephemeral deployment at a comparable speed to local interpreter run."
 
