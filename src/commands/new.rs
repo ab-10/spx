@@ -61,11 +61,12 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("Control plane: {api_url}"));
     }
 
-    let resp = api::post_run(&api_url, &creds.token, &archive, verbose)?;
+    let resp = api::post_run(&api_url, &creds.token, &archive, "main.py", verbose)?;
 
     ui::success("Deployed.");
     eprintln!();
     eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
+    eprintln!("  pet name: {}", resp.pet_name);
     eprintln!();
     ui::info(&format!("cd {name} to start working on your project."));
 
@@ -128,6 +129,7 @@ dependencies = [
 fn write_main_py(dir: &Path, name: &str) -> Result<()> {
     let content = format!(
         r#"import os
+import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -139,8 +141,7 @@ def root():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 "#
     );
     std::fs::write(dir.join("main.py"), content).context("writing main.py")
