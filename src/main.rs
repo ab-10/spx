@@ -16,5 +16,6 @@ fn main() -> Result<()> {
         Command::Run(args) => commands::run::run(args, verbose),
         Command::New(args) => commands::new::new_project(args, verbose),
         Command::Login => commands::login::login(verbose),
+        Command::Kill(args) => commands::kill::kill(args, verbose),
     }
 }
