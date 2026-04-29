@@ -23,10 +23,12 @@ pub enum Command {
     Run(RunArgs),
     /// Create a new spx project with FastAPI scaffolding
     New(NewArgs),
-    /// Authenticate with GitHub
-    Login,
+    /// Authenticate via GitHub OAuth, or with a registration code
+    Login(LoginArgs),
     /// Kill a running deproc by its pet name
     Kill(KillArgs),
+    /// List your running deployments
+    Ps,
 }
 
 #[derive(Parser)]
@@ -49,4 +51,11 @@ pub struct NewArgs {
 pub struct KillArgs {
     /// Pet name of the deproc/VM to kill
     pub pet_name: String,
+}
+
+#[derive(Parser)]
+pub struct LoginArgs {
+    /// Redeem a registration code to bypass GitHub OAuth
+    #[arg(long)]
+    pub code: Option<String>,
 }

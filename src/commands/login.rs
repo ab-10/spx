@@ -121,6 +121,48 @@ pub fn login(verbose: bool) -> Result<()> {
     bail!("Timed out waiting for authorization. Run `spx login` to try again.")
 }
 
+pub fn login_with_code(code: &str, verbose: bool) -> Result<()> {
+    let api_url = api::api_url();
+    if verbose {
+        ui::verbose(&format!("Control plane: {api_url}"));
+    }
+
+    let url = format!("{}/auth/code", api_url.trim_end_matches('/'));
+    if verbose {
+        ui::verbose(&format!("POST {url}"));
+    }
+
+    let resp: TokenResponse = match ureq::post(&url).send_json(serde_json::json!({ "code": code })) {
+        Ok(r) => r.into_json().context("parsing /auth/code response")?,
+        Err(ureq::Error::Status(401, _)) => bail!("Invalid registration code."),
+        Err(ureq::Error::Status(503, _)) => {
+            bail!("Code-based auth is not enabled on this control plane.")
+        }
+        Err(ureq::Error::Status(code_, r)) => {
+            let body = r.into_string().unwrap_or_else(|_| "<no body>".into());
+            bail!("POST {url} returned {code_}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
+    };
+
+    if resp.status != "ready" {
+        bail!("Unexpected status from server: {}", resp.status);
+    }
+
+    let token = resp.spx_token.context("server returned ready but no token")?;
+    let username = resp.username.context("server returned ready but no username")?;
+
+    Credentials {
+        username: username.clone(),
+        token,
+    }
+    .save()?;
+
+    eprintln!();
+    ui::success(&format!("Logged in as {username}"));
+    Ok(())
+}
+
 /// Helper trait just for bold formatting in this module.
 trait Bold {
     fn bold(&self) -> String;
