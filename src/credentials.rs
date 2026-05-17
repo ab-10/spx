@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -33,8 +33,7 @@ impl Credentials {
                 .with_context(|| format!("creating {}", parent.display()))?;
         }
         let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("writing {}", path.display()))?;
+        std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
         Ok(())
     }
 

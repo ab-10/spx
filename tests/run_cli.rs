@@ -9,7 +9,7 @@ fn not_logged_in_fails_cleanly() {
     let output = Command::new(spx_bin)
         .args(["run", "hi.py"])
         .current_dir(tmp_dir.path())
-        .env("HOME", tmp_dir.path())  // no credentials.json here
+        .env("HOME", tmp_dir.path()) // no credentials.json here
         .output()
         .expect("run spx");
 
@@ -34,7 +34,10 @@ fn missing_filename_fails_cleanly() {
         .output()
         .expect("run spx");
 
-    assert!(!output.status.success(), "spx run with no filename should fail");
+    assert!(
+        !output.status.success(),
+        "spx run with no filename should fail"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("FILENAME") || stderr.contains("required"),

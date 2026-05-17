@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::env;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -27,14 +27,13 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
 
     // 1. Create project directory and write scaffolding files
     ui::step(1, total_steps, "Scaffolding project...");
-    std::fs::create_dir(&project_dir)
-        .with_context(|| format!("creating directory '{name}'"))?;
+    std::fs::create_dir(&project_dir).with_context(|| format!("creating directory '{name}'"))?;
 
     write_pyproject_toml(&project_dir, name)?;
     write_main_py(&project_dir, name)?;
     write_gitignore(&project_dir)?;
 
-    let state = LocalState::init(name);
+    let mut state = LocalState::init(name);
     state.save(&project_dir)?;
 
     ui::success("Project files created.");
@@ -61,12 +60,29 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("Control plane: {api_url}"));
     }
 
-    let resp = api::post_run(&api_url, &creds.token, &archive, "main.py", verbose)?;
+    let resp = api::post_run(
+        &api_url,
+        &creds.token,
+        &archive,
+        "main.py",
+        &state.project_name,
+        state.deployment_slug.as_deref(),
+        verbose,
+    )?;
+    if resp.project_name != state.project_name {
+        bail!(
+            "server returned project '{}' for local project '{}'",
+            resp.project_name,
+            state.project_name
+        );
+    }
+    state.deployment_slug = Some(resp.deployment_slug.clone());
+    state.save(&project_dir)?;
 
     ui::success("Deployed.");
     eprintln!();
     eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
-    eprintln!("  pet name: {}", resp.pet_name);
+    eprintln!("  deployment: {}", resp.deployment_slug);
     eprintln!();
     ui::info(&format!("cd {name} to start working on your project."));
 
@@ -81,7 +97,10 @@ fn validate_name(name: &str) -> Result<()> {
     if !name.chars().next().unwrap().is_ascii_lowercase() {
         bail!("Project name must start with a lowercase letter");
     }
-    if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         bail!("Project name must contain only lowercase letters, digits, and hyphens");
     }
     if name.ends_with('-') {
@@ -98,8 +117,16 @@ fn run_command(program: &str, args: &[&str], cwd: &Path, verbose: bool) -> Resul
     let status = Command::new(program)
         .current_dir(cwd)
         .args(args)
-        .stdout(if verbose { Stdio::inherit() } else { Stdio::null() })
-        .stderr(if verbose { Stdio::inherit() } else { Stdio::null() })
+        .stdout(if verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
+        .stderr(if verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
         .status()
         .with_context(|| format!("failed to spawn {program}"))?;
 

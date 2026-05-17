@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use colored::Colorize;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,7 +9,8 @@ use crate::ui;
 
 #[derive(Deserialize)]
 struct DprocSummary {
-    pet_name: String,
+    deployment_slug: String,
+    project_name: String,
     state: String,
     started_at: f64,
     url: Option<String>,
@@ -58,12 +59,18 @@ pub fn ps(json: bool, verbose: bool) -> Result<()> {
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
 
-    let pet_w = items
+    let deployment_w = items
         .iter()
-        .map(|i| i.pet_name.len())
+        .map(|i| i.deployment_slug.len())
         .max()
-        .unwrap_or(8)
-        .max("PET NAME".len());
+        .unwrap_or(10)
+        .max("DEPLOYMENT".len());
+    let project_w = items
+        .iter()
+        .map(|i| i.project_name.len())
+        .max()
+        .unwrap_or(7)
+        .max("PROJECT".len());
     let state_w = items
         .iter()
         .map(|i| i.state.len())
@@ -78,12 +85,14 @@ pub fn ps(json: bool, verbose: bool) -> Result<()> {
         .max("URL".len());
 
     println!(
-        "{:<pet_w$}  {:<state_w$}  {:<url_w$}  {}",
-        "PET NAME".bold(),
+        "{:<deployment_w$}  {:<project_w$}  {:<state_w$}  {:<url_w$}  {}",
+        "DEPLOYMENT".bold(),
+        "PROJECT".bold(),
         "STATE".bold(),
         "URL".bold(),
         "AGE".bold(),
-        pet_w = pet_w,
+        deployment_w = deployment_w,
+        project_w = project_w,
         state_w = state_w,
         url_w = url_w,
     );
@@ -92,12 +101,14 @@ pub fn ps(json: bool, verbose: bool) -> Result<()> {
         let url_disp = item.url.as_deref().unwrap_or("-");
         let age = format_age((now - item.started_at).max(0.0));
         println!(
-            "{:<pet_w$}  {:<state_w$}  {:<url_w$}  {}",
-            item.pet_name,
+            "{:<deployment_w$}  {:<project_w$}  {:<state_w$}  {:<url_w$}  {}",
+            item.deployment_slug,
+            item.project_name,
             item.state,
             url_disp,
             age,
-            pet_w = pet_w,
+            deployment_w = deployment_w,
+            project_w = project_w,
             state_w = state_w,
             url_w = url_w,
         );

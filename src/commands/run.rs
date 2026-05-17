@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use colored::Colorize;
 use serde_json::Value;
 use std::env;
@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::cli::RunArgs;
 use crate::commands::api;
+use crate::config::{LocalState, migrate_if_needed, recover_state};
 use crate::credentials::Credentials;
 use crate::ui;
 
@@ -23,10 +24,16 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     }
 
     let creds = Credentials::require()?;
+    migrate_if_needed(&cwd)?;
+    let mut state = match LocalState::load(&cwd) {
+        Ok(state) => state,
+        Err(_) => recover_state(&cwd)?,
+    };
 
     let api_url = api::api_url();
     if verbose {
         ui::verbose(&format!("Control plane: {api_url}"));
+        ui::verbose(&format!("Project: {}", state.project_name));
     }
 
     let archive = api::create_archive(&cwd)?;
@@ -34,71 +41,88 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("Archive size: {} bytes", archive.len()));
     }
 
-    let resp = api::post_run(&api_url, &creds.token, &archive, &entry, verbose)?;
+    let resp = api::post_run(
+        &api_url,
+        &creds.token,
+        &archive,
+        &entry,
+        &state.project_name,
+        state.deployment_slug.as_deref(),
+        verbose,
+    )?;
+    if resp.project_name != state.project_name {
+        bail!(
+            "server returned project '{}' for local project '{}'",
+            resp.project_name,
+            state.project_name
+        );
+    }
+    if state.deployment_slug.as_deref() != Some(resp.deployment_slug.as_str()) {
+        state.deployment_slug = Some(resp.deployment_slug.clone());
+        state.save(&cwd)?;
+    }
 
     eprintln!();
     eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
     eprintln!(
         "  {} {}",
         "kill with:".dimmed(),
-        format!("spx kill {}", resp.pet_name).dimmed()
+        format!("spx kill {}", resp.deployment_slug).dimmed()
     );
     eprintln!();
 
     let logs_url = format!(
         "{}/dproc/{}/logs?follow=true",
         api_url.trim_end_matches('/'),
-        resp.pet_name
+        resp.deployment_slug
     );
 
     let mut exit_state: Option<(Option<i32>, Option<String>, String)> = None;
-    api::stream_sse(&logs_url, &creds.token, 5, |ev| {
-        match ev.event.as_str() {
-            "log" => {
-                let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-                let stream = v.get("stream").and_then(|s| s.as_str()).unwrap_or("stdout");
-                let msg = v.get("msg").and_then(|s| s.as_str()).unwrap_or("");
-                if stream == "stderr" {
-                    let stderr = std::io::stderr();
-                    let mut h = stderr.lock();
-                    let _ = h.write_all(msg.as_bytes());
-                    let _ = h.flush();
-                } else {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    let _ = h.write_all(msg.as_bytes());
-                    let _ = h.flush();
-                }
-                Ok(false)
+    api::stream_sse(&logs_url, &creds.token, 5, |ev| match ev.event.as_str() {
+        "log" => {
+            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
+            let stream = v.get("stream").and_then(|s| s.as_str()).unwrap_or("stdout");
+            let msg = v.get("msg").and_then(|s| s.as_str()).unwrap_or("");
+            if stream == "stderr" {
+                let stderr = std::io::stderr();
+                let mut h = stderr.lock();
+                let _ = h.write_all(msg.as_bytes());
+                let _ = h.flush();
+            } else {
+                let stdout = std::io::stdout();
+                let mut h = stdout.lock();
+                let _ = h.write_all(msg.as_bytes());
+                let _ = h.flush();
             }
-            "running" => Ok(false),
-            "bind" => Ok(false),
-            "exit" => {
-                let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-                let code = v.get("code").and_then(|c| c.as_i64()).map(|c| c as i32);
-                let signal = v
-                    .get("signal")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.to_string());
-                exit_state = Some((code, signal, "exited".into()));
-                Ok(true)
-            }
-            "failed" => {
-                let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-                let reason = v
-                    .get("reason")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                exit_state = Some((Some(1), None, format!("failed: {reason}")));
-                Ok(true)
-            }
-            "gap" => {
-                ui::warn("log stream gap (some events were buffered out)");
-                Ok(false)
-            }
-            _ => Ok(false),
+            Ok(false)
         }
+        "running" => Ok(false),
+        "bind" => Ok(false),
+        "exit" => {
+            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
+            let code = v.get("code").and_then(|c| c.as_i64()).map(|c| c as i32);
+            let signal = v
+                .get("signal")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string());
+            exit_state = Some((code, signal, "exited".into()));
+            Ok(true)
+        }
+        "failed" => {
+            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
+            let reason = v
+                .get("reason")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            exit_state = Some((Some(1), None, format!("failed: {reason}")));
+            Ok(true)
+        }
+        "gap" => {
+            ui::warn("log stream gap (some events were buffered out)");
+            Ok(false)
+        }
+        _ => Ok(false),
     })?;
 
     match exit_state {
@@ -143,12 +167,12 @@ fn resolve_entry(cwd: &Path, filename: &Path) -> Result<String> {
         .canonicalize()
         .with_context(|| format!("canonicalizing cwd {}", cwd.display()))?;
 
-    let rel = canonical
-        .strip_prefix(&cwd_canonical)
-        .map_err(|_| anyhow::anyhow!(
+    let rel = canonical.strip_prefix(&cwd_canonical).map_err(|_| {
+        anyhow::anyhow!(
             "entry file must be inside the current directory (no ..-escape): {}",
             filename.display()
-        ))?;
+        )
+    })?;
 
     if rel.extension().and_then(|s| s.to_str()) != Some("py") {
         bail!("entry file must end in .py: {}", filename.display());

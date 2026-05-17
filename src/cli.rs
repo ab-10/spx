@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-
 #[derive(Parser)]
 #[command(name = "spx", version, about)]
 pub struct Cli {
@@ -19,13 +18,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Package and deploy the project to a preview environment
+    /// Package and deploy the project
     Run(RunArgs),
     /// Create a new spx project with FastAPI scaffolding
     New(NewArgs),
     /// Authenticate via GitHub OAuth, or with a registration code
     Login(LoginArgs),
-    /// Kill a running deproc by its pet name
+    /// Kill a running deployment by its slug
     Kill(KillArgs),
     /// List your running deployments
     Ps,
@@ -49,8 +48,8 @@ pub struct NewArgs {
 
 #[derive(Parser)]
 pub struct KillArgs {
-    /// Pet name of the deproc/VM to kill
-    pub pet_name: String,
+    /// Deployment slug to kill
+    pub deployment_slug: String,
 }
 
 #[derive(Parser)]

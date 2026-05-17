@@ -14,6 +14,8 @@ const STATE_FILE: &str = "state.json";
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalState {
     pub project_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deployment_slug: Option<String>,
     pub container_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
@@ -26,10 +28,10 @@ pub struct LocalState {
 impl LocalState {
     pub fn load(dir: &Path) -> Result<Self> {
         let path = Self::path(dir);
-        let contents =
-            std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        let state: Self =
-            serde_json::from_str(&contents).with_context(|| format!("parsing {}", path.display()))?;
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let state: Self = serde_json::from_str(&contents)
+            .with_context(|| format!("parsing {}", path.display()))?;
         Ok(state)
     }
 
@@ -39,8 +41,7 @@ impl LocalState {
             .with_context(|| format!("creating {}", state_dir.display()))?;
         let path = Self::path(dir);
         let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("writing {}", path.display()))?;
+        std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
         Ok(())
     }
 
@@ -57,6 +58,7 @@ impl LocalState {
         let suffix = petname::petname(3, "-").unwrap_or_else(|| "container".to_string());
         LocalState {
             project_name: project_name.to_string(),
+            deployment_slug: None,
             container_name: format!("spx-{project_name}-{suffix}"),
             container_id: None,
             container_ip: None,
@@ -95,6 +97,12 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
         let mut state = LocalState::load(dir)?;
         if !state_has_project_name(dir)? {
             state.project_name = project_name;
+            if state.deployment_slug.is_none() {
+                state.deployment_slug = raw
+                    .get("deployment_slug")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+            }
             state.save(dir)?;
         }
     } else if raw.get("container_id").is_some() {
@@ -104,10 +112,17 @@ pub fn migrate_if_needed(dir: &Path) -> Result<()> {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("spx-{project_name}"));
-        let container_id = raw.get("container_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let container_id = raw
+            .get("container_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let state = LocalState {
             project_name,
+            deployment_slug: raw
+                .get("deployment_slug")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             container_name,
             container_id,
             container_ip: None,
@@ -143,7 +158,10 @@ pub fn ensure_gitignore_has_spx(dir: &Path) -> Result<()> {
     let gitignore_path = dir.join(".gitignore");
     if gitignore_path.exists() {
         let contents = std::fs::read_to_string(&gitignore_path)?;
-        if contents.lines().any(|line| line.trim() == ".spx/" || line.trim() == ".spx") {
+        if contents
+            .lines()
+            .any(|line| line.trim() == ".spx/" || line.trim() == ".spx")
+        {
             return Ok(());
         }
         let mut new_contents = contents;
@@ -162,9 +180,10 @@ pub fn ensure_gitignore_has_spx(dir: &Path) -> Result<()> {
 /// derive project_name from the directory name and create state.
 pub fn recover_state(dir: &Path) -> Result<LocalState> {
     let has_package_json = dir.join("package.json").exists();
+    let has_pyproject = dir.join("pyproject.toml").exists();
     let has_git = dir.join(".git").exists();
 
-    if !has_package_json && !has_git {
+    if !has_package_json && !has_pyproject && !has_git {
         anyhow::bail!(
             "No .spx/state.json found and directory doesn't look like a project. Run `spx new` first."
         );

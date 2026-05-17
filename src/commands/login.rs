@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::commands::api;
@@ -33,16 +33,15 @@ pub fn login(verbose: bool) -> Result<()> {
         ui::verbose(&format!("POST {device_url}"));
     }
 
-    let device_resp: DeviceAuthResponse = match ureq::post(&device_url)
-        .send_json(serde_json::json!({}))
-    {
-        Ok(resp) => resp.into_json().context("parsing device auth response")?,
-        Err(ureq::Error::Status(code, resp)) => {
-            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
-            bail!("POST {device_url} returned {code}: {body}");
-        }
-        Err(ureq::Error::Transport(t)) => bail!("POST {device_url} failed: {t}"),
-    };
+    let device_resp: DeviceAuthResponse =
+        match ureq::post(&device_url).send_json(serde_json::json!({})) {
+            Ok(resp) => resp.into_json().context("parsing device auth response")?,
+            Err(ureq::Error::Status(code, resp)) => {
+                let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+                bail!("POST {device_url} returned {code}: {body}");
+            }
+            Err(ureq::Error::Transport(t)) => bail!("POST {device_url} failed: {t}"),
+        };
 
     // Step 2: Show user code and open browser
     eprintln!();
@@ -58,7 +57,10 @@ pub fn login(verbose: bool) -> Result<()> {
         if verbose {
             ui::verbose(&format!("Could not open browser: {e}"));
         }
-        ui::info(&format!("Open {} in your browser", device_resp.verification_uri));
+        ui::info(&format!(
+            "Open {} in your browser",
+            device_resp.verification_uri
+        ));
     }
 
     // Step 3: Poll /auth/token until ready or expired
@@ -96,8 +98,12 @@ pub fn login(verbose: bool) -> Result<()> {
                 continue;
             }
             "ready" => {
-                let token = token_resp.spx_token.context("server returned ready but no token")?;
-                let username = token_resp.username.context("server returned ready but no username")?;
+                let token = token_resp
+                    .spx_token
+                    .context("server returned ready but no token")?;
+                let username = token_resp
+                    .username
+                    .context("server returned ready but no username")?;
 
                 let creds = Credentials {
                     username: username.clone(),
@@ -132,7 +138,8 @@ pub fn login_with_code(code: &str, verbose: bool) -> Result<()> {
         ui::verbose(&format!("POST {url}"));
     }
 
-    let resp: TokenResponse = match ureq::post(&url).send_json(serde_json::json!({ "code": code })) {
+    let resp: TokenResponse = match ureq::post(&url).send_json(serde_json::json!({ "code": code }))
+    {
         Ok(r) => r.into_json().context("parsing /auth/code response")?,
         Err(ureq::Error::Status(401, _)) => bail!("Invalid registration code."),
         Err(ureq::Error::Status(503, _)) => {
@@ -149,8 +156,12 @@ pub fn login_with_code(code: &str, verbose: bool) -> Result<()> {
         bail!("Unexpected status from server: {}", resp.status);
     }
 
-    let token = resp.spx_token.context("server returned ready but no token")?;
-    let username = resp.username.context("server returned ready but no username")?;
+    let token = resp
+        .spx_token
+        .context("server returned ready but no token")?;
+    let username = resp
+        .username
+        .context("server returned ready but no username")?;
 
     Credentials {
         username: username.clone(),

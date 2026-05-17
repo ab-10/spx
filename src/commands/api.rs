@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Result};
-use flate2::write::GzEncoder;
+use anyhow::{Context, Result, bail};
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use serde::Deserialize;
 use std::env;
 use std::io::{BufRead, BufReader, Read};
@@ -54,8 +54,7 @@ fn add_dir_recursive<W: std::io::Write>(
                 continue;
             }
             // Exclude specific dirs at root only
-            if current == root
-                && (name_str == ".git" || name_str == ".venv" || name_str == ".spx")
+            if current == root && (name_str == ".git" || name_str == ".venv" || name_str == ".spx")
             {
                 continue;
             }
@@ -73,17 +72,21 @@ fn add_dir_recursive<W: std::io::Write>(
     Ok(())
 }
 
-/// Build a multipart/form-data body with a `code` archive plus an `entry` text field.
-pub fn build_multipart_body(archive: &[u8], entry: &str) -> (String, Vec<u8>) {
+/// Build a multipart/form-data body with code and deployment metadata.
+pub fn build_multipart_body(
+    archive: &[u8],
+    entry: &str,
+    project_name: &str,
+    deployment_slug: Option<&str>,
+) -> (String, Vec<u8>) {
     let boundary = "----spx-upload-boundary";
     let mut body = Vec::new();
 
-    // entry field
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"entry\"\r\n");
-    body.extend_from_slice(b"\r\n");
-    body.extend_from_slice(entry.as_bytes());
-    body.extend_from_slice(b"\r\n");
+    append_text_field(&mut body, boundary, "entry", entry);
+    append_text_field(&mut body, boundary, "project_name", project_name);
+    if let Some(slug) = deployment_slug {
+        append_text_field(&mut body, boundary, "deployment_slug", slug);
+    }
 
     // code archive field
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
@@ -101,12 +104,23 @@ pub fn build_multipart_body(archive: &[u8], entry: &str) -> (String, Vec<u8>) {
     (content_type, body)
 }
 
+fn append_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"{name}\"\r\n").as_bytes(),
+    );
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(value.as_bytes());
+    body.extend_from_slice(b"\r\n");
+}
+
 #[derive(Deserialize)]
 pub struct RunResponse {
     pub url: String,
     #[allow(dead_code)]
     pub username: String,
-    pub pet_name: String,
+    pub project_name: String,
+    pub deployment_slug: String,
 }
 
 pub fn post_run(
@@ -114,6 +128,8 @@ pub fn post_run(
     token: &str,
     archive: &[u8],
     entry: &str,
+    project_name: &str,
+    deployment_slug: Option<&str>,
     verbose: bool,
 ) -> Result<RunResponse> {
     let url = format!("{}/run", api_url.trim_end_matches('/'));
@@ -121,9 +137,13 @@ pub fn post_run(
         ui::verbose(&format!("POST {url}"));
         ui::verbose(&format!("Archive size: {} bytes", archive.len()));
         ui::verbose(&format!("Entry: {entry}"));
+        ui::verbose(&format!("Project: {project_name}"));
+        if let Some(slug) = deployment_slug {
+            ui::verbose(&format!("Deployment slug: {slug}"));
+        }
     }
 
-    let (content_type, body) = build_multipart_body(archive, entry);
+    let (content_type, body) = build_multipart_body(archive, entry, project_name, deployment_slug);
 
     match ureq::post(&url)
         .set("Authorization", &format!("Bearer {token}"))
@@ -136,9 +156,7 @@ pub fn post_run(
         }
         Err(ureq::Error::Status(code, resp)) => {
             if code == 401 || code == 403 {
-                bail!(
-                    "session invalid or expired. Run `spx login` to re-authenticate."
-                );
+                bail!("session invalid or expired. Run `spx login` to re-authenticate.");
             }
             let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
             if let Some(detail) = parse_error_body(&body) {
@@ -171,12 +189,7 @@ pub struct SseEvent {
 /// returning `Ok(true)`), the stream ends, or a transport error occurs.
 /// On EOF without a terminal event, reconnects with `Last-Event-ID` until
 /// `max_retries` is exhausted.
-pub fn stream_sse<F>(
-    url: &str,
-    token: &str,
-    max_retries: u32,
-    mut on_event: F,
-) -> Result<()>
+pub fn stream_sse<F>(url: &str, token: &str, max_retries: u32, mut on_event: F) -> Result<()>
 where
     F: FnMut(&SseEvent) -> Result<bool>,
 {
@@ -331,11 +344,29 @@ mod tests {
             .map(|e| e.path().unwrap().to_string_lossy().to_string())
             .collect();
 
-        assert!(paths.iter().any(|p| p == "main.py"), "should include main.py; got: {paths:?}");
-        assert!(paths.iter().any(|p| p == "pkg/mod.py"), "should include pkg/mod.py; got: {paths:?}");
-        assert!(!paths.iter().any(|p| p.starts_with(".git")), "should exclude .git; got: {paths:?}");
-        assert!(!paths.iter().any(|p| p.starts_with(".venv")), "should exclude .venv; got: {paths:?}");
-        assert!(!paths.iter().any(|p| p.starts_with(".spx")), "should exclude .spx; got: {paths:?}");
-        assert!(!paths.iter().any(|p| p.contains("__pycache__")), "should exclude __pycache__; got: {paths:?}");
+        assert!(
+            paths.iter().any(|p| p == "main.py"),
+            "should include main.py; got: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p == "pkg/mod.py"),
+            "should include pkg/mod.py; got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with(".git")),
+            "should exclude .git; got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with(".venv")),
+            "should exclude .venv; got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with(".spx")),
+            "should exclude .spx; got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("__pycache__")),
+            "should exclude __pycache__; got: {paths:?}"
+        );
     }
 }

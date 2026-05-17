@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::cli::KillArgs;
 use crate::commands::api;
@@ -11,7 +11,7 @@ pub fn kill(args: KillArgs, verbose: bool) -> Result<()> {
     let url = format!(
         "{}/dproc/{}/kill",
         api_url.trim_end_matches('/'),
-        args.pet_name
+        args.deployment_slug
     );
     if verbose {
         ui::verbose(&format!("POST {url}"));
@@ -22,14 +22,14 @@ pub fn kill(args: KillArgs, verbose: bool) -> Result<()> {
         .call()
     {
         Ok(_) => {
-            ui::success(&format!("Killed {}.", args.pet_name));
+            ui::success(&format!("Killed {}.", args.deployment_slug));
             Ok(())
         }
         Err(ureq::Error::Status(404, _)) => {
-            bail!("no such running deproc: {}", args.pet_name)
+            bail!("no such running deployment: {}", args.deployment_slug)
         }
         Err(ureq::Error::Status(403, _)) => {
-            bail!("not your deproc: {}", args.pet_name)
+            bail!("not your deployment: {}", args.deployment_slug)
         }
         Err(ureq::Error::Status(401, _)) => {
             bail!("session invalid or expired. Run `spx login` to re-authenticate.")
