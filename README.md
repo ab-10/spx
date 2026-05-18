@@ -1,6 +1,6 @@
 # spx
 
-`spx` scaffolds Python (FastAPI) projects and deploys them to a cloud preview environment on GCP Cloud Run.
+`spx` scaffolds Python (FastAPI) projects and deploys them to the cloud runtime on GCP Cloud Run.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ spx new my-app --user alice
 cd my-app
 ```
 
-This scaffolds a FastAPI project, installs dependencies with `uv sync`, syncs to GCS, and provisions a Cloud Run preview environment. You get a live URL at the end.
+This scaffolds a FastAPI project, installs dependencies with `uv sync`, syncs to GCS, and provisions a Cloud Run deployment. You get a live URL at the end.
 
 To re-deploy after making changes:
 
@@ -30,12 +30,12 @@ spx run
 1. Scaffolds a FastAPI project (`pyproject.toml`, `main.py`, `.gitignore`).
 2. Initializes a git repo and installs dependencies (`uv sync`).
 3. Syncs the project to `gs://spx-<user>/app/` via rclone.
-4. Requests a run on the preview environment (provisions on first use).
+4. Requests a deployed run in Cloud Run (provisions on first use).
 
 ### `spx run`
 
 1. Syncs the current directory to GCS via rclone.
-2. Requests a run on the preview environment.
+2. Requests a deployed run in Cloud Run.
 
 Use `--user <name>` on first run (or to change user). The identity is persisted to `.spx/state.json`.
 
