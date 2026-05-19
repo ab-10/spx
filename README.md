@@ -48,14 +48,12 @@ Use `spx kill <deployment-slug>` to stop the running remote service and remove i
 
 The project identity and deployment slug are persisted to `.spx/state.json`.
 
-By default, `spx run` exits after deploy so you can continue chained shell commands.
-Use `--attach` to stream runtime logs from the remote process until it exits.
+`spx run` exits after deploy so you can continue chained shell commands.
 
 You can pass one-off env overrides on run:
 
 ```bash
 spx run main.py --env DEBUG=true --env API_TOKEN
-spx run main.py --attach
 ```
 
 - `--env KEY=value` sends an explicit value for this deploy only.

@@ -4,7 +4,6 @@ use flate2::write::GzEncoder;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::env;
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
 use crate::ui;
@@ -298,123 +297,6 @@ pub fn percent_encode_query_value(value: &str) -> String {
 pub fn parse_error_body(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
     Some(v.get("detail")?.as_str()?.to_string())
-}
-
-/// One parsed SSE event.
-#[derive(Debug, Clone, Default)]
-pub struct SseEvent {
-    pub id: Option<String>,
-    pub event: String,
-    pub data: String,
-}
-
-/// Open an SSE stream to `url`, calling `on_event` for each event.
-///
-/// Returns once a `terminal` event is seen (caller signals via the closure
-/// returning `Ok(true)`), the stream ends, or a transport error occurs.
-/// On EOF without a terminal event, reconnects with `Last-Event-ID` until
-/// `max_retries` is exhausted.
-pub fn stream_sse<F>(url: &str, token: &str, max_retries: u32, mut on_event: F) -> Result<()>
-where
-    F: FnMut(&SseEvent) -> Result<bool>,
-{
-    let mut last_id: Option<String> = None;
-    let mut retries: u32 = 0;
-    loop {
-        let mut req = ureq::get(url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Accept", "text/event-stream");
-        if let Some(id) = &last_id {
-            req = req.set("Last-Event-ID", id);
-        }
-
-        let resp = match req.call() {
-            Ok(r) => r,
-            Err(ureq::Error::Status(404, _)) => {
-                bail!("deproc not found (404)");
-            }
-            Err(ureq::Error::Status(403, _)) => {
-                bail!("not your deproc (403)");
-            }
-            Err(ureq::Error::Status(401, _)) => {
-                bail!("session invalid or expired. Run `spx login`.");
-            }
-            Err(ureq::Error::Status(410, _)) => {
-                bail!("deproc buffer purged (410 Gone)");
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                bail!("GET {url} returned {code}: {body}");
-            }
-            Err(ureq::Error::Transport(t)) => {
-                if retries >= max_retries {
-                    bail!("SSE transport failed after {retries} retries: {t}");
-                }
-                retries += 1;
-                std::thread::sleep(std::time::Duration::from_millis(
-                    250 * (1 << retries.min(5)),
-                ));
-                continue;
-            }
-        };
-
-        let reader: Box<dyn Read + Send + Sync> = resp.into_reader();
-        let buf = BufReader::new(reader);
-        let mut current = SseEvent::default();
-        let mut got_any = false;
-        let mut terminal = false;
-        for line_res in buf.lines() {
-            let line = match line_res {
-                Ok(l) => l,
-                Err(_) => break, // transport hiccup → reconnect
-            };
-            got_any = true;
-            if line.is_empty() {
-                if !current.event.is_empty() || !current.data.is_empty() {
-                    if let Some(id) = &current.id {
-                        last_id = Some(id.clone());
-                    }
-                    if on_event(&current)? {
-                        terminal = true;
-                        break;
-                    }
-                }
-                current = SseEvent::default();
-                continue;
-            }
-            if line.starts_with(':') {
-                continue; // comment / heartbeat
-            }
-            if let Some(rest) = line.strip_prefix("id:") {
-                current.id = Some(rest.trim().to_string());
-            } else if let Some(rest) = line.strip_prefix("event:") {
-                current.event = rest.trim().to_string();
-            } else if let Some(rest) = line.strip_prefix("data:") {
-                if !current.data.is_empty() {
-                    current.data.push('\n');
-                }
-                current.data.push_str(rest.trim_start());
-            }
-        }
-
-        if terminal {
-            return Ok(());
-        }
-
-        // Stream ended without a terminal event.
-        if retries >= max_retries {
-            bail!("SSE stream ended before terminal event (after {retries} retries)");
-        }
-        if !got_any {
-            // Bail out on immediately-empty bodies to avoid spinning.
-            retries += 1;
-            std::thread::sleep(std::time::Duration::from_millis(
-                250 * (1 << retries.min(5)),
-            ));
-        } else {
-            retries += 1;
-        }
-    }
 }
 
 #[cfg(test)]
