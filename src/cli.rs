@@ -33,6 +33,8 @@ pub enum Command {
     Logs(LogsArgs),
     /// Manage project environment variables and secrets
     Env(EnvArgs),
+    /// Manage deployment dependencies
+    Uv(UvArgs),
 }
 
 #[derive(Parser)]
@@ -95,6 +97,38 @@ pub struct EnvUnsetArgs {
 pub struct EnvLoadArgs {
     /// Path to env file (e.g. .env)
     pub file: PathBuf,
+}
+
+#[derive(Parser)]
+#[command(
+    about = "Manage deployment dependencies",
+    long_about = "Adds, removes, and lists deployment dependencies for this project. Changes apply to the next `spx run`."
+)]
+pub struct UvArgs {
+    #[command(subcommand)]
+    pub command: UvCommand,
+}
+
+#[derive(Subcommand)]
+pub enum UvCommand {
+    /// Add or update a dependency requirement
+    Add(UvAddArgs),
+    /// Remove a dependency by package name
+    Remove(UvRemoveArgs),
+    /// List deployment dependencies
+    List,
+}
+
+#[derive(Parser)]
+pub struct UvAddArgs {
+    /// Requirement specifier (e.g. httpx or "uvicorn[standard]>=0.34")
+    pub requirement: String,
+}
+
+#[derive(Parser)]
+pub struct UvRemoveArgs {
+    /// Package name to remove
+    pub name: String,
 }
 
 #[derive(Parser)]

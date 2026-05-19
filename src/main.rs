@@ -23,5 +23,6 @@ fn main() -> Result<()> {
         Command::Ps => commands::ps::ps(verbose),
         Command::Logs(args) => commands::logs::logs(args, verbose),
         Command::Env(args) => commands::env::env(args, verbose),
+        Command::Uv(args) => commands::uv::uv(args, verbose),
     }
 }

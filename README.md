@@ -4,9 +4,7 @@
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) — Python package manager
 - [rclone](https://rclone.org/) — file sync (`brew install rclone`)
-- Python 3.12+
 
 ## Quickstart
 
@@ -58,6 +56,20 @@ spx run main.py --env DEBUG=true --env API_TOKEN
 
 - `--env KEY=value` sends an explicit value for this deploy only.
 - `--env KEY` copies `KEY` from your local process environment for this deploy only.
+
+### `spx uv`
+
+Manage deployment dependencies:
+
+```bash
+spx uv list
+spx uv add httpx
+spx uv add "uvicorn[standard]>=0.34"
+spx uv remove httpx
+```
+
+Dependency changes apply on the next deploy with `spx run <file>`.
+You do not need local `python`, `pip`, or `uv` installed to deploy.
 
 ### `spx env`
 

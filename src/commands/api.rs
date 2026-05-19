@@ -195,6 +195,20 @@ pub struct EnvListResponse {
     pub variables: Vec<EnvListItem>,
 }
 
+#[derive(Deserialize)]
+pub struct DependencyListItem {
+    pub name: String,
+    pub requirement: String,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DependencyListResponse {
+    pub deployment_slug: String,
+    pub project_name: String,
+    pub dependencies: Vec<DependencyListItem>,
+}
+
 pub fn env_list(api_url: &str, token: &str, deployment_slug: &str) -> Result<EnvListResponse> {
     let url = format!(
         "{}/projects/{}/env",
@@ -260,6 +274,91 @@ pub fn env_unset(api_url: &str, token: &str, deployment_slug: &str, key: &str) -
         api_url.trim_end_matches('/'),
         percent_encode_query_value(deployment_slug),
         percent_encode_query_value(key)
+    );
+    match ureq::delete(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("DELETE {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("DELETE {url} failed: {t}"),
+    }
+}
+
+pub fn dep_list(api_url: &str, token: &str, deployment_slug: &str) -> Result<DependencyListResponse> {
+    let url = format!(
+        "{}/projects/{}/deps",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug)
+    );
+    match ureq::get(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(resp) => resp.into_json().context("parsing dependency list response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("GET {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("GET {url} failed: {t}"),
+    }
+}
+
+pub fn dep_set(
+    api_url: &str,
+    token: &str,
+    deployment_slug: &str,
+    name: &str,
+    requirement: &str,
+) -> Result<()> {
+    let url = format!(
+        "{}/projects/{}/deps/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug),
+        percent_encode_query_value(name)
+    );
+    let payload = serde_json::json!({ "requirement": requirement });
+    match ureq::put(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_string(&payload.to_string())
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("PUT {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("PUT {url} failed: {t}"),
+    }
+}
+
+pub fn dep_unset(api_url: &str, token: &str, deployment_slug: &str, name: &str) -> Result<()> {
+    let url = format!(
+        "{}/projects/{}/deps/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug),
+        percent_encode_query_value(name)
     );
     match ureq::delete(&url)
         .set("Authorization", &format!("Bearer {token}"))

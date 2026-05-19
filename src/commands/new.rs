@@ -24,7 +24,7 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         bail!("Directory '{}' already exists", name);
     }
 
-    let total_steps = 4;
+    let total_steps = 3;
 
     // 1. Create project directory and write scaffolding files
     ui::step(1, total_steps, "Scaffolding project...");
@@ -44,13 +44,8 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     run_command("git", &["init"], &project_dir, verbose)?;
     ui::success("Git initialized.");
 
-    // 3. uv sync
-    ui::step(3, total_steps, "Installing dependencies (uv sync)...");
-    run_command("uv", &["sync"], &project_dir, verbose)?;
-    ui::success("Dependencies installed.");
-
-    // 4. Package and deploy
-    ui::step(4, total_steps, "Deploying...");
+    // 3. Package and deploy
+    ui::step(3, total_steps, "Deploying...");
     let archive = api::create_archive(&project_dir)?;
     if verbose {
         ui::verbose(&format!("Archive size: {} bytes", archive.len()));
