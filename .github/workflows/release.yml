@@ -93,7 +93,7 @@ jobs:
         run: |
           cat > homebrew-spx/Formula/spx.rb <<EOF
           class Spx < Formula
-            desc "CLI for scaffolding and deploying FastAPI apps to ephemeral previews"
+            desc "CLI for scaffolding and deploying FastAPI backends to SPX"
             homepage "https://github.com/ab-10/spx"
             version "${VERSION}"
 
