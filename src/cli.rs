@@ -12,10 +12,6 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    /// Output as JSON for scripting and editor integrations
-    #[arg(long, global = true)]
-    pub json: bool,
-
     /// Print verbose debug output (useful when a command hangs)
     #[arg(short, long, global = true)]
     pub verbose: bool,
@@ -33,6 +29,10 @@ pub enum Command {
     Kill(KillArgs),
     /// List your running remote services
     Ps,
+    /// Print recent runtime logs for the current project
+    Logs(LogsArgs),
+    /// Manage project environment variables and secrets
+    Env(EnvArgs),
 }
 
 #[derive(Parser)]
@@ -44,9 +44,57 @@ pub struct RunArgs {
     /// Path to the Python entry file (relative to CWD)
     pub filename: PathBuf,
 
-    /// Output as JSON
+    /// Runtime env override (`KEY=value`) or copy from local env (`KEY`)
+    #[arg(long = "env")]
+    pub env: Vec<String>,
+}
+
+#[derive(Parser)]
+#[command(
+    about = "Manage project environment variables",
+    long_about = "Sets, unsets, lists, and bulk-loads persisted project environment variables for SPX deployments. Commands are non-interactive by default for agent and CI safety."
+)]
+pub struct EnvArgs {
+    #[command(subcommand)]
+    pub command: EnvCommand,
+}
+
+#[derive(Subcommand)]
+pub enum EnvCommand {
+    /// Set a persisted env variable for this project
+    Set(EnvSetArgs),
+    /// Remove a persisted env variable for this project
+    Unset(EnvUnsetArgs),
+    /// List persisted env variable keys for this project
+    List,
+    /// Load env variables from a file (for example .env)
+    Load(EnvLoadArgs),
+}
+
+#[derive(Parser)]
+pub struct EnvSetArgs {
+    /// KEY or KEY=value
+    pub key_or_pair: String,
+
+    /// Read the value from stdin
     #[arg(long)]
-    pub json: bool,
+    pub from_stdin: bool,
+
+    /// Read the value from local process environment variable named KEY
+    #[arg(long)]
+    pub from_env: bool,
+}
+
+#[derive(Parser)]
+pub struct EnvUnsetArgs {
+    /// Env var key to remove
+    pub key: String,
+}
+
+#[derive(Parser)]
+pub struct EnvLoadArgs {
+    /// Path to env file (e.g. .env)
+    pub file: PathBuf,
 }
 
 #[derive(Parser)]
@@ -67,6 +115,29 @@ pub struct NewArgs {
 pub struct KillArgs {
     /// Deployment slug to stop
     pub deployment_slug: String,
+}
+
+#[derive(Parser)]
+#[command(
+    about = "Print recent runtime logs for the current project",
+    long_about = "Prints JSON runtime logs for the current project's latest deployment run. Defaults to the last five minutes."
+)]
+pub struct LogsArgs {
+    /// Start of the query window as an ISO 8601 timestamp
+    #[arg(long = "from")]
+    pub from: Option<String>,
+
+    /// End of the query window as an ISO 8601 timestamp
+    #[arg(long)]
+    pub to: Option<String>,
+
+    /// Maximum number of log entries to return
+    #[arg(long, default_value_t = 500)]
+    pub limit: u32,
+
+    /// Filter by derived severity: info or error
+    #[arg(long)]
+    pub severity: Option<String>,
 }
 
 #[derive(Parser)]

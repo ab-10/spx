@@ -48,6 +48,34 @@ Use `spx kill <deployment-slug>` to stop the running remote service and remove i
 
 The project identity and deployment slug are persisted to `.spx/state.json`.
 
+By default, `spx run` exits after deploy so you can continue chained shell commands.
+Use `--attach` to stream runtime logs from the remote process until it exits.
+
+You can pass one-off env overrides on run:
+
+```bash
+spx run main.py --env DEBUG=true --env API_TOKEN
+spx run main.py --attach
+```
+
+- `--env KEY=value` sends an explicit value for this deploy only.
+- `--env KEY` copies `KEY` from your local process environment for this deploy only.
+
+### `spx env`
+
+Manage persisted project-scoped env values:
+
+```bash
+spx env set DATABASE_URL=postgres://...
+spx env set DATABASE_URL --from-env
+printf %s "$DATABASE_URL" | spx env set DATABASE_URL --from-stdin
+spx env load .env
+spx env list
+spx env unset DATABASE_URL
+```
+
+`spx env` is non-interactive by default. Bare `spx env set KEY` is invalid and fails with a clear error.
+
 ### Global flags
 
 | Flag | What it does |

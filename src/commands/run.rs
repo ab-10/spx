@@ -1,8 +1,7 @@
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
-use serde_json::Value;
+use std::collections::BTreeMap;
 use std::env;
-use std::io::Write;
 use std::path::Path;
 
 use crate::cli::RunArgs;
@@ -10,6 +9,26 @@ use crate::commands::api;
 use crate::config::{LocalState, migrate_if_needed, recover_state};
 use crate::credentials::Credentials;
 use crate::ui;
+
+fn resolve_run_env_overrides(items: &[String]) -> Result<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    for item in items {
+        if let Some((key, value)) = item.split_once('=') {
+            if key.is_empty() {
+                bail!("invalid --env value '{item}': missing key before '='");
+            }
+            out.insert(key.to_string(), value.to_string());
+            continue;
+        }
+        let value = env::var(item).with_context(|| {
+            format!(
+                "--env {item} requires local process env var {item} to be set, or use --env {item}=VALUE"
+            )
+        })?;
+        out.insert(item.to_string(), value);
+    }
+    Ok(out)
+}
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -31,6 +50,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     };
 
     let api_url = api::api_url();
+    let run_env_overrides = resolve_run_env_overrides(&args.env)?;
     if verbose {
         ui::verbose(&format!("Control plane: {api_url}"));
         ui::verbose(&format!("Project: {}", state.project_name));
@@ -48,6 +68,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         &entry,
         &state.project_name,
         state.deployment_slug.as_deref(),
+        &run_env_overrides,
         verbose,
     )?;
     if resp.project_name != state.project_name {
@@ -71,72 +92,8 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     );
     eprintln!();
 
-    let logs_url = format!(
-        "{}/dproc/{}/logs?follow=true",
-        api_url.trim_end_matches('/'),
-        resp.deployment_slug
-    );
+    return Ok(());
 
-    let mut exit_state: Option<(Option<i32>, Option<String>, String)> = None;
-    api::stream_sse(&logs_url, &creds.token, 5, |ev| match ev.event.as_str() {
-        "log" => {
-            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-            let stream = v.get("stream").and_then(|s| s.as_str()).unwrap_or("stdout");
-            let msg = v.get("msg").and_then(|s| s.as_str()).unwrap_or("");
-            if stream == "stderr" {
-                let stderr = std::io::stderr();
-                let mut h = stderr.lock();
-                let _ = h.write_all(msg.as_bytes());
-                let _ = h.flush();
-            } else {
-                let stdout = std::io::stdout();
-                let mut h = stdout.lock();
-                let _ = h.write_all(msg.as_bytes());
-                let _ = h.flush();
-            }
-            Ok(false)
-        }
-        "running" => Ok(false),
-        "bind" => Ok(false),
-        "exit" => {
-            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-            let code = v.get("code").and_then(|c| c.as_i64()).map(|c| c as i32);
-            let signal = v
-                .get("signal")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
-            exit_state = Some((code, signal, "exited".into()));
-            Ok(true)
-        }
-        "failed" => {
-            let v: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
-            let reason = v
-                .get("reason")
-                .and_then(|s| s.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            exit_state = Some((Some(1), None, format!("failed: {reason}")));
-            Ok(true)
-        }
-        "gap" => {
-            ui::warn("log stream gap (some events were buffered out)");
-            Ok(false)
-        }
-        _ => Ok(false),
-    })?;
-
-    match exit_state {
-        Some((Some(code), _, _)) => std::process::exit(code),
-        Some((None, Some(sig), _)) => {
-            ui::warn(&format!("deproc terminated by signal {sig}"));
-            std::process::exit(1);
-        }
-        Some((None, None, label)) => {
-            ui::warn(&format!("deproc {label}"));
-            std::process::exit(1);
-        }
-        None => Ok(()),
-    }
 }
 
 /// Resolve `filename` relative to `cwd`. Returns the relative path string

@@ -11,7 +11,6 @@ use cli::{Cli, Command};
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let verbose = cli.verbose;
-    let json = cli.json;
 
     match cli.command {
         Command::Run(args) => commands::run::run(args, verbose),
@@ -21,6 +20,8 @@ fn main() -> Result<()> {
             None => commands::login::login(verbose),
         },
         Command::Kill(args) => commands::kill::kill(args, verbose),
-        Command::Ps => commands::ps::ps(json, verbose),
+        Command::Ps => commands::ps::ps(verbose),
+        Command::Logs(args) => commands::logs::logs(args, verbose),
+        Command::Env(args) => commands::env::env(args, verbose),
     }
 }

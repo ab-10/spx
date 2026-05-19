@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -67,6 +68,7 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
         "main.py",
         &state.project_name,
         state.deployment_slug.as_deref(),
+        &BTreeMap::new(),
         verbose,
     )?;
     if resp.project_name != state.project_name {

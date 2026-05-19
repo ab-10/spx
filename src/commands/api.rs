@@ -2,6 +2,7 @@ use anyhow::{Context, Result, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::env;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -78,6 +79,7 @@ pub fn build_multipart_body(
     entry: &str,
     project_name: &str,
     deployment_slug: Option<&str>,
+    run_env_overrides: &BTreeMap<String, String>,
 ) -> (String, Vec<u8>) {
     let boundary = "----spx-upload-boundary";
     let mut body = Vec::new();
@@ -86,6 +88,11 @@ pub fn build_multipart_body(
     append_text_field(&mut body, boundary, "project_name", project_name);
     if let Some(slug) = deployment_slug {
         append_text_field(&mut body, boundary, "deployment_slug", slug);
+    }
+    if !run_env_overrides.is_empty() {
+        let run_env_json = serde_json::to_string(run_env_overrides)
+            .expect("serializing run env overrides should not fail");
+        append_text_field(&mut body, boundary, "run_env_json", &run_env_json);
     }
 
     // code archive field
@@ -130,6 +137,7 @@ pub fn post_run(
     entry: &str,
     project_name: &str,
     deployment_slug: Option<&str>,
+    run_env_overrides: &BTreeMap<String, String>,
     verbose: bool,
 ) -> Result<RunResponse> {
     let url = format!("{}/run", api_url.trim_end_matches('/'));
@@ -143,7 +151,13 @@ pub fn post_run(
         }
     }
 
-    let (content_type, body) = build_multipart_body(archive, entry, project_name, deployment_slug);
+    let (content_type, body) = build_multipart_body(
+        archive,
+        entry,
+        project_name,
+        deployment_slug,
+        run_env_overrides,
+    );
 
     match ureq::post(&url)
         .set("Authorization", &format!("Bearer {token}"))
@@ -167,6 +181,117 @@ pub fn post_run(
         }
         Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
     }
+}
+
+#[derive(Deserialize)]
+pub struct EnvListItem {
+    pub key: String,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct EnvListResponse {
+    pub deployment_slug: String,
+    pub project_name: String,
+    pub variables: Vec<EnvListItem>,
+}
+
+pub fn env_list(api_url: &str, token: &str, deployment_slug: &str) -> Result<EnvListResponse> {
+    let url = format!(
+        "{}/projects/{}/env",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug)
+    );
+    match ureq::get(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(resp) => resp.into_json().context("parsing env list response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("GET {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("GET {url} failed: {t}"),
+    }
+}
+
+pub fn env_set(
+    api_url: &str,
+    token: &str,
+    deployment_slug: &str,
+    key: &str,
+    value: &str,
+) -> Result<()> {
+    let url = format!(
+        "{}/projects/{}/env/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug),
+        percent_encode_query_value(key)
+    );
+    let payload = serde_json::json!({ "value": value });
+    match ureq::put(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_string(&payload.to_string())
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("PUT {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("PUT {url} failed: {t}"),
+    }
+}
+
+pub fn env_unset(api_url: &str, token: &str, deployment_slug: &str, key: &str) -> Result<()> {
+    let url = format!(
+        "{}/projects/{}/env/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(deployment_slug),
+        percent_encode_query_value(key)
+    );
+    match ureq::delete(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("DELETE {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("DELETE {url} failed: {t}"),
+    }
+}
+
+pub fn percent_encode_query_value(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 /// Extract the `detail` field from a JSON error response, if present.
