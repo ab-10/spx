@@ -86,6 +86,11 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     eprintln!();
     eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
     eprintln!(
+        "  {}",
+        "SPX scans 8000-9000 for user-exposed ports and routes this URL to the lowest discovered listening port in range."
+            .dimmed()
+    );
+    eprintln!(
         "  {} {}",
         "kill with:".dimmed(),
         format!("spx kill {}", resp.deployment_slug).dimmed()

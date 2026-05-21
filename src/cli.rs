@@ -40,7 +40,7 @@ pub enum Command {
 #[derive(Parser)]
 #[command(
     about = "Deploy the project to its stable SPX URL",
-    long_about = "Packages the current directory and deploys the selected Python entry file to the SPX production runtime. Re-running this command for the same project replaces the running remote service at the same project URL."
+    long_about = "Packages the current directory and deploys the selected Python entry file to the SPX production runtime. Re-running this command for the same project replaces the running remote service at the same project URL. SPX scans 8000-9000 for user-exposed ports and binds the deployment URL to the lowest discovered listening port in range."
 )]
 pub struct RunArgs {
     /// Path to the Python entry file (relative to CWD)
