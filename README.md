@@ -48,14 +48,7 @@ The project identity and deployment slug are persisted to `.spx/state.json`.
 
 `spx run` exits after deploy so you can continue chained shell commands.
 
-You can pass one-off env overrides on run:
-
-```bash
-spx run main.py --env DEBUG=true --env API_TOKEN
-```
-
-- `--env KEY=value` sends an explicit value for this deploy only.
-- `--env KEY` copies `KEY` from your local process environment for this deploy only.
+Use `spx env` to manage deploy environment values before running `spx run`.
 
 ### `spx uv`
 
@@ -71,6 +64,14 @@ spx uv remove httpx
 Dependency changes apply on the next deploy with `spx run <file>`.
 You do not need local `python`, `pip`, or `uv` installed to deploy.
 
+#### Dependency management decisions
+
+- `pyproject.toml` and `uv.lock` are the dependency source of truth.
+- `spx uv add/remove/list` is the preferred interface for agent-safe, non-interactive dependency changes.
+- Dependencies are project/deployment state in SPX; users should not need a separate "server" mental model.
+- Dependency edits are explicit and reviewable in git (lockfile and manifest diffs), then applied at deploy time.
+- Runtime install behavior is deterministic (`uv sync --frozen`), so lockfile drift is surfaced instead of silently resolved.
+
 ### `spx env`
 
 Manage persisted project-scoped env values:
@@ -85,6 +86,29 @@ spx env unset DATABASE_URL
 ```
 
 `spx env` is non-interactive by default. Bare `spx env set KEY` is invalid and fails with a clear error.
+
+### `spx logs`
+
+Query runtime logs for the current project:
+
+```bash
+spx logs
+spx logs --limit 100
+spx logs --severity error
+spx logs --from 2026-05-19T10:00:00Z --to 2026-05-19T10:05:00Z
+```
+
+- Output is JSON and is designed for deterministic agent/tool parsing.
+- Default query window is the last five minutes.
+- `--severity` supports `info` and `error`.
+- `--from` and `--to` accept ISO 8601 timestamps.
+- `--limit` caps returned entries (default `500`).
+
+#### Logging interface decisions
+
+- Logging UX prioritizes coding-agent workflows: structured output over human-only formatting.
+- Querying is window/filter based (`from`/`to`/`severity`/`limit`) instead of cursor-based in v1.
+- v1 intentionally excludes `--follow`; repeated bounded queries are the expected workflow.
 
 ### Global flags
 
