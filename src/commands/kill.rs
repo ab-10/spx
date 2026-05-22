@@ -9,7 +9,7 @@ pub fn kill(args: KillArgs, verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
     let url = format!(
-        "{}/dproc/{}/kill",
+        "{}/projects/{}/kill",
         api_url.trim_end_matches('/'),
         args.deployment_slug
     );

@@ -7,7 +7,7 @@ use crate::ui;
 pub fn ps(verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
-    let url = format!("{}/dproc", api_url.trim_end_matches('/'));
+    let url = format!("{}/projects", api_url.trim_end_matches('/'));
     if verbose {
         ui::verbose(&format!("GET {url}"));
     }
