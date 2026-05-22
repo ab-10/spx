@@ -76,7 +76,7 @@ pub fn new_project(args: NewArgs, verbose: bool) -> Result<()> {
     state.deployment_slug = Some(resp.deployment_slug.clone());
     state.save(&project_dir)?;
 
-    ui::success("Deployed.");
+    ui::success("Deployment Requested");
     eprintln!();
     eprintln!("  {}", ui::hyperlink(&resp.url, &resp.url));
     eprintln!("  deployment: {}", resp.deployment_slug);
