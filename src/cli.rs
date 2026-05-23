@@ -35,6 +35,8 @@ pub enum Command {
     Env(EnvArgs),
     /// Manage deployment dependencies
     Uv(UvArgs),
+    /// Submit your hackathon project
+    HackathonSubmit,
 }
 
 #[derive(Parser)]

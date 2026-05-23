@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
@@ -209,6 +209,50 @@ pub struct DependencyListResponse {
     pub dependencies: Vec<DependencyListItem>,
 }
 
+#[derive(Serialize)]
+pub struct HackathonSubmissionRequest<'a> {
+    pub project_name: &'a str,
+    pub project_url: &'a str,
+    pub repository_url: Option<&'a str>,
+    pub description: &'a str,
+}
+
+#[derive(Deserialize)]
+pub struct HackathonSubmissionResponse {
+    pub project_name: String,
+    pub project_url: String,
+    #[allow(dead_code)]
+    pub spx_username: String,
+}
+
+pub fn post_hackathon_submission(
+    api_url: &str,
+    token: &str,
+    payload: &HackathonSubmissionRequest<'_>,
+) -> Result<HackathonSubmissionResponse> {
+    let url = format!("{}/hackathon-submissions", api_url.trim_end_matches('/'));
+    match ureq::post(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_json(serde_json::to_value(payload)?)
+    {
+        Ok(resp) => resp
+            .into_json()
+            .context("parsing hackathon submission response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("POST {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
+    }
+}
+
 pub fn env_list(api_url: &str, token: &str, deployment_slug: &str) -> Result<EnvListResponse> {
     let url = format!(
         "{}/projects/{}/env",
@@ -294,7 +338,11 @@ pub fn env_unset(api_url: &str, token: &str, deployment_slug: &str, key: &str) -
     }
 }
 
-pub fn dep_list(api_url: &str, token: &str, deployment_slug: &str) -> Result<DependencyListResponse> {
+pub fn dep_list(
+    api_url: &str,
+    token: &str,
+    deployment_slug: &str,
+) -> Result<DependencyListResponse> {
     let url = format!(
         "{}/projects/{}/deps",
         api_url.trim_end_matches('/'),
