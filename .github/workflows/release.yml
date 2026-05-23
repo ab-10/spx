@@ -17,6 +17,8 @@ jobs:
             os: macos-latest
           - target: x86_64-apple-darwin
             os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +59,7 @@ jobs:
           files: |
             spx-aarch64-apple-darwin/*.tar.gz
             spx-x86_64-apple-darwin/*.tar.gz
+            spx-x86_64-unknown-linux-gnu/*.tar.gz
           generate_release_notes: true
 
   update-tap:
@@ -75,8 +78,10 @@ jobs:
         run: |
           arm64_sha=$(sha256sum spx-aarch64-apple-darwin/*.tar.gz | awk '{print $1}')
           x86_64_sha=$(sha256sum spx-x86_64-apple-darwin/*.tar.gz | awk '{print $1}')
+          linux_x86_64_sha=$(sha256sum spx-x86_64-unknown-linux-gnu/*.tar.gz | awk '{print $1}')
           echo "arm64=$arm64_sha" >> "$GITHUB_OUTPUT"
           echo "x86_64=$x86_64_sha" >> "$GITHUB_OUTPUT"
+          echo "linux_x86_64=$linux_x86_64_sha" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-spx tap
         uses: actions/checkout@v4
@@ -90,6 +95,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           ARM64_SHA: ${{ steps.sha.outputs.arm64 }}
           X86_64_SHA: ${{ steps.sha.outputs.x86_64 }}
+          LINUX_X86_64_SHA: ${{ steps.sha.outputs.linux_x86_64 }}
         run: |
           cat > homebrew-spx/Formula/spx.rb <<EOF
           class Spx < Formula
@@ -105,6 +111,13 @@ jobs:
               on_intel do
                 url "https://github.com/ab-10/spx/releases/download/v${VERSION}/spx-${VERSION}-x86_64-apple-darwin.tar.gz"
                 sha256 "${X86_64_SHA}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/ab-10/spx/releases/download/v${VERSION}/spx-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_X86_64_SHA}"
               end
             end
 
