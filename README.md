@@ -114,7 +114,6 @@ spx logs --from 2026-05-19T10:00:00Z --to 2026-05-19T10:05:00Z
 
 | Flag | What it does |
 |---|---|
-| `--json` | Output as JSON for scripting and editor integrations |
 | `-v, --verbose` | Print verbose debug output |
 
 ## Testing
