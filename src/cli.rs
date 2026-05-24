@@ -35,6 +35,8 @@ pub enum Command {
     Env(EnvArgs),
     /// Manage deployment dependencies
     Uv(UvArgs),
+    /// Publish standalone HTML files at unlisted URLs
+    Pub(PubArgs),
     /// Submit your hackathon project
     HackathonSubmit,
 }
@@ -131,6 +133,52 @@ pub struct UvAddArgs {
 pub struct UvRemoveArgs {
     /// Package name to remove
     pub name: String,
+}
+
+#[derive(Parser)]
+#[command(
+    about = "Publish standalone HTML files",
+    long_about = "Uploads a single standalone HTML file and serves it at an unlisted pub.runspx.com URL."
+)]
+pub struct PubArgs {
+    #[command(subcommand)]
+    pub command: Option<PubCommand>,
+
+    /// HTML file to publish. Equivalent to `spx pub create PATH`.
+    pub path: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+pub enum PubCommand {
+    /// Upload a new standalone HTML pub
+    Create(PubCreateArgs),
+    /// Replace an existing pub and keep the same URL
+    Update(PubUpdateArgs),
+    /// Delete an existing pub
+    Delete(PubDeleteArgs),
+    /// List your pubs
+    List,
+}
+
+#[derive(Parser)]
+pub struct PubCreateArgs {
+    /// Standalone HTML file to publish
+    pub path: PathBuf,
+}
+
+#[derive(Parser)]
+pub struct PubUpdateArgs {
+    /// Pub slug or https://{slug}.pub.runspx.com/ URL
+    pub slug_or_url: String,
+
+    /// Replacement standalone HTML file
+    pub path: PathBuf,
+}
+
+#[derive(Parser)]
+pub struct PubDeleteArgs {
+    /// Pub slug or https://{slug}.pub.runspx.com/ URL
+    pub slug_or_url: String,
 }
 
 #[derive(Parser)]

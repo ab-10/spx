@@ -110,6 +110,24 @@ pub fn build_multipart_body(
     (content_type, body)
 }
 
+pub fn build_pub_multipart_body(file_bytes: &[u8], filename: &str) -> (String, Vec<u8>) {
+    let boundary = "----spx-pub-upload-boundary";
+    let mut body = Vec::new();
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+            filename.replace('"', "_")
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(b"Content-Type: text/html\r\n");
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(file_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
 fn append_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
@@ -207,6 +225,25 @@ pub struct DependencyListResponse {
     pub deployment_slug: String,
     pub project_name: String,
     pub dependencies: Vec<DependencyListItem>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub struct PubResponse {
+    pub slug: String,
+    pub url: String,
+    pub original_filename: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub content_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub expires_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct PubListResponse {
+    pub pubs: Vec<PubResponse>,
 }
 
 #[derive(Serialize)]
@@ -424,6 +461,113 @@ pub fn dep_unset(api_url: &str, token: &str, deployment_slug: &str, name: &str) 
             bail!("DELETE {url} returned {code}: {body}");
         }
         Err(ureq::Error::Transport(t)) => bail!("DELETE {url} failed: {t}"),
+    }
+}
+
+pub fn pub_create(
+    api_url: &str,
+    token: &str,
+    file_bytes: &[u8],
+    filename: &str,
+) -> Result<PubResponse> {
+    let url = format!("{}/pub", api_url.trim_end_matches('/'));
+    let (content_type, body) = build_pub_multipart_body(file_bytes, filename);
+    match ureq::post(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", &content_type)
+        .send_bytes(&body)
+    {
+        Ok(resp) => resp.into_json().context("parsing pub create response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("POST {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
+    }
+}
+
+pub fn pub_update(
+    api_url: &str,
+    token: &str,
+    slug_or_url: &str,
+    file_bytes: &[u8],
+    filename: &str,
+) -> Result<PubResponse> {
+    let url = format!(
+        "{}/pub/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(slug_or_url)
+    );
+    let (content_type, body) = build_pub_multipart_body(file_bytes, filename);
+    match ureq::put(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", &content_type)
+        .send_bytes(&body)
+    {
+        Ok(resp) => resp.into_json().context("parsing pub update response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("PUT {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("PUT {url} failed: {t}"),
+    }
+}
+
+pub fn pub_delete(api_url: &str, token: &str, slug_or_url: &str) -> Result<()> {
+    let url = format!(
+        "{}/pub/{}",
+        api_url.trim_end_matches('/'),
+        percent_encode_query_value(slug_or_url)
+    );
+    match ureq::delete(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("DELETE {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("DELETE {url} failed: {t}"),
+    }
+}
+
+pub fn pub_list(api_url: &str, token: &str) -> Result<PubListResponse> {
+    let url = format!("{}/pub", api_url.trim_end_matches('/'));
+    match ureq::get(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+    {
+        Ok(resp) => resp.into_json().context("parsing pub list response"),
+        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
+            bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&body) {
+                bail!("{detail}");
+            }
+            bail!("GET {url} returned {code}: {body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("GET {url} failed: {t}"),
     }
 }
 

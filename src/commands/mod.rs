@@ -6,5 +6,6 @@ pub mod login;
 pub mod logs;
 pub mod new;
 pub mod ps;
+pub mod pub_cmd;
 pub mod run;
 pub mod uv;

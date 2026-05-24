@@ -24,6 +24,7 @@ fn main() -> Result<()> {
         Command::Logs(args) => commands::logs::logs(args, verbose),
         Command::Env(args) => commands::env::env(args, verbose),
         Command::Uv(args) => commands::uv::uv(args, verbose),
+        Command::Pub(args) => commands::pub_cmd::pub_cmd(args, verbose),
         Command::HackathonSubmit => commands::hackathon_submit::hackathon_submit(verbose),
     }
 }
