@@ -1,6 +1,5 @@
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
-use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 
@@ -9,26 +8,6 @@ use crate::commands::api;
 use crate::config::{LocalState, migrate_if_needed, recover_state};
 use crate::credentials::Credentials;
 use crate::ui;
-
-fn resolve_run_env_overrides(items: &[String]) -> Result<BTreeMap<String, String>> {
-    let mut out = BTreeMap::new();
-    for item in items {
-        if let Some((key, value)) = item.split_once('=') {
-            if key.is_empty() {
-                bail!("invalid --env value '{item}': missing key before '='");
-            }
-            out.insert(key.to_string(), value.to_string());
-            continue;
-        }
-        let value = env::var(item).with_context(|| {
-            format!(
-                "--env {item} requires local process env var {item} to be set, or use --env {item}=VALUE"
-            )
-        })?;
-        out.insert(item.to_string(), value);
-    }
-    Ok(out)
-}
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -50,7 +29,6 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     };
 
     let api_url = api::api_url();
-    let run_env_overrides = resolve_run_env_overrides(&args.env)?;
     if verbose {
         ui::verbose(&format!("Control plane: {api_url}"));
         ui::verbose(&format!("Project: {}", state.project_name));
@@ -68,7 +46,6 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         &entry,
         &state.project_name,
         state.deployment_slug.as_deref(),
-        &run_env_overrides,
         verbose,
     )?;
     if resp.project_name != state.project_name {
@@ -98,7 +75,6 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     eprintln!();
 
     return Ok(());
-
 }
 
 /// Resolve `filename` relative to `cwd`. Returns the relative path string

@@ -1,6 +1,5 @@
 pub mod api;
 pub mod env;
-pub mod hackathon_submit;
 pub mod kill;
 pub mod login;
 pub mod logs;

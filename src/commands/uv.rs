@@ -89,7 +89,10 @@ fn uv_list(verbose: bool) -> Result<()> {
         println!("no deployment dependencies configured");
         return Ok(());
     }
-    println!("deployment dependencies for {} ({})", resp.project_name, resp.deployment_slug);
+    println!(
+        "deployment dependencies for {} ({})",
+        resp.project_name, resp.deployment_slug
+    );
     for dep in resp.dependencies {
         match dep.updated_at {
             Some(ts) => println!("{}\t{}\t{}", dep.name, dep.requirement, ts),

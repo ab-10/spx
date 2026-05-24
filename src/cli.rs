@@ -37,8 +37,6 @@ pub enum Command {
     Uv(UvArgs),
     /// Publish standalone HTML files at unlisted URLs
     Pub(PubArgs),
-    /// Submit your hackathon project
-    HackathonSubmit,
 }
 
 #[derive(Parser)]
@@ -49,10 +47,6 @@ pub enum Command {
 pub struct RunArgs {
     /// Path to the Python entry file (relative to CWD)
     pub filename: PathBuf,
-
-    /// Runtime env override (`KEY=value`) or copy from local env (`KEY`)
-    #[arg(long = "env")]
-    pub env: Vec<String>,
 }
 
 #[derive(Parser)]
