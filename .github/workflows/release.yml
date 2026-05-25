@@ -2,14 +2,59 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          version=$(python - <<'PY'
+          import tomllib
+
+          with open('Cargo.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['package']['version'])
+          PY
+          )
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag does not already exist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "Release tag v${VERSION} already exists. Bump Cargo.toml version before merging to main."
+            exit 1
+          fi
+
+      - name: Create and push release tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${VERSION}" "${GITHUB_SHA}"
+          git push origin "v${VERSION}"
+
   build:
+    needs: prepare-release
     strategy:
       matrix:
         include:
@@ -36,24 +81,24 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Package
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../spx-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz spx
+          tar czf ../../../spx-${VERSION}-${{ matrix.target }}.tar.gz spx
           cd ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: spx-${{ matrix.target }}
-          path: spx-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz
+          path: spx-${{ needs.prepare-release.outputs.version }}-${{ matrix.target }}.tar.gz
 
   release:
-    needs: build
+    needs:
+      - prepare-release
+      - build
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -62,6 +107,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.prepare-release.outputs.version }}
+          name: v${{ needs.prepare-release.outputs.version }}
           files: |
             spx-aarch64-apple-darwin/*.tar.gz
             spx-x86_64-apple-darwin/*.tar.gz
@@ -70,13 +117,11 @@ jobs:
           generate_release_notes: true
 
   update-tap:
-    needs: release
+    needs:
+      - prepare-release
+      - release
     runs-on: ubuntu-latest
     steps:
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
 
@@ -99,7 +144,7 @@ jobs:
 
       - name: Update formula
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
           ARM64_SHA: ${{ steps.sha.outputs.arm64 }}
           X86_64_SHA: ${{ steps.sha.outputs.x86_64 }}
           LINUX_X86_64_SHA: ${{ steps.sha.outputs.linux_x86_64 }}
@@ -146,5 +191,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/spx.rb
-          git commit -m "Update spx to ${{ steps.version.outputs.version }}"
+          git commit -m "Update spx to ${{ needs.prepare-release.outputs.version }}"
           git push

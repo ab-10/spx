@@ -123,3 +123,8 @@ cargo test
 ```
 
 Integration tests run the real `spx` binary against temp directories. No network or cloud access required — tests exercise user resolution, state persistence, and the rclone availability probe.
+
+## Maintainer release rule
+
+When changing `spx`, bump `version` in `Cargo.toml` in the same change.
+Unless explicitly specified otherwise, increment the patch version.
