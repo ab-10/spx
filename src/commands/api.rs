@@ -7,7 +7,14 @@ use std::path::Path;
 
 use crate::ui;
 
+#[derive(serde::Serialize)]
+struct FeedbackPayload<'a, T: serde::Serialize> {
+    message: &'a str,
+    context: &'a T,
+}
+
 const DEFAULT_API_URL: &str = "https://api.runspx.com";
+const MAX_FEEDBACK_BYTES: usize = 1024 * 1024;
 
 pub fn api_url() -> String {
     env::var("SPX_API_URL").unwrap_or_else(|_| DEFAULT_API_URL.to_string())
@@ -510,6 +517,37 @@ pub fn pub_list(api_url: &str, token: &str) -> Result<PubListResponse> {
             bail!("GET {url} returned {code}: {body}");
         }
         Err(ureq::Error::Transport(t)) => bail!("GET {url} failed: {t}"),
+    }
+}
+
+pub fn post_feedback<T: serde::Serialize>(
+    api_url: &str,
+    token: Option<&str>,
+    message: &str,
+    context: &T,
+) -> Result<()> {
+    let url = format!("{}/feedback", api_url.trim_end_matches('/'));
+    let payload = FeedbackPayload { message, context };
+    let body = serde_json::to_string(&payload).context("serializing feedback payload")?;
+    if body.len() > MAX_FEEDBACK_BYTES {
+        bail!("feedback submission exceeds 1MB limit ({} bytes)", body.len());
+    }
+
+    let mut req = ureq::post(&url).set("Content-Type", "application/json");
+    if let Some(token) = token {
+        req = req.set("Authorization", &format!("Bearer {token}"));
+    }
+
+    match req.send_string(&body) {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, resp)) => {
+            let resp_body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            if let Some(detail) = parse_error_body(&resp_body) {
+                bail!("{detail}");
+            }
+            bail!("POST {url} returned {code}: {resp_body}");
+        }
+        Err(ureq::Error::Transport(t)) => bail!("POST {url} failed: {t}"),
     }
 }
 

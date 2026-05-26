@@ -1,5 +1,6 @@
 pub mod api;
 pub mod env;
+pub mod feedback;
 pub mod kill;
 pub mod login;
 pub mod logs;

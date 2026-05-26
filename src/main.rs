@@ -25,5 +25,6 @@ fn main() -> Result<()> {
         Command::Env(args) => commands::env::env(args, verbose),
         Command::Uv(args) => commands::uv::uv(args, verbose),
         Command::Pub(args) => commands::pub_cmd::pub_cmd(args, verbose),
+        Command::Feedback(args) => commands::feedback::feedback(args, verbose),
     }
 }

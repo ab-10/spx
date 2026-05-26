@@ -110,6 +110,21 @@ spx logs --from 2026-05-19T10:00:00Z --to 2026-05-19T10:05:00Z
 - Querying is window/filter based (`from`/`to`/`severity`/`limit`) instead of cursor-based in v1.
 - v1 intentionally excludes `--follow`; repeated bounded queries are the expected workflow.
 
+### `spx feedback`
+
+Send product feedback in a single non-interactive command:
+
+```bash
+spx feedback "deploy failed with glibc error"
+echo "deploy output and notes" | spx feedback -
+```
+
+- No prompts, editor, or interactive login.
+- Uses existing auth token when available; otherwise submits anonymous feedback.
+- Auto-attaches context: CLI version, OS/arch, and `~/.spx/last.log` when present.
+- Includes an agent note to attach chat logs/transcripts in the feedback message.
+- Enforces a 1MB submission limit.
+
 ### Global flags
 
 | Flag | What it does |
