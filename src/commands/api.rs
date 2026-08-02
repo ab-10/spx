@@ -231,7 +231,6 @@ pub struct PubResponse {
     pub content_type: String,
     pub created_at: String,
     pub updated_at: String,
-    pub expires_at: String,
 }
 
 #[derive(Deserialize)]

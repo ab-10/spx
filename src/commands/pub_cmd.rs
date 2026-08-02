@@ -99,7 +99,7 @@ fn pub_list(verbose: bool) -> Result<()> {
         return Ok(());
     }
     for pub_item in resp.pubs {
-        println!("{}\t{}", pub_item.url, pub_item.expires_at);
+        println!("{}", pub_item.url);
     }
     Ok(())
 }
