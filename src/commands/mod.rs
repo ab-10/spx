@@ -1,12 +1,5 @@
 pub mod api;
-pub mod env;
 pub mod feedback;
-pub mod kill;
 pub mod login;
-pub mod logs;
-pub mod new;
-pub mod ps;
 pub mod pub_cmd;
-pub mod run;
 pub mod subscribe;
-pub mod uv;

@@ -1,19 +1,26 @@
 use std::process::Command;
 
-#[test]
-fn not_logged_in_fails_cleanly() {
-    let tmp_dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(tmp_dir.path().join("hi.py"), "print('hi')").unwrap();
+fn spx_bin() -> &'static str {
+    env!("CARGO_BIN_EXE_spx")
+}
 
-    let spx_bin = env!("CARGO_BIN_EXE_spx");
-    let output = Command::new(spx_bin)
-        .args(["run", "hi.py"])
+#[test]
+fn root_publish_not_logged_in_fails_cleanly() {
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        tmp_dir.path().join("report.html"),
+        "<!doctype html><html></html>",
+    )
+    .unwrap();
+
+    let output = Command::new(spx_bin())
+        .arg("report.html")
         .current_dir(tmp_dir.path())
-        .env("HOME", tmp_dir.path()) // no credentials.json here
+        .env("HOME", tmp_dir.path())
         .output()
         .expect("run spx");
 
-    assert!(!output.status.success(), "spx run should have failed");
+    assert!(!output.status.success(), "spx should have failed");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -23,24 +30,53 @@ fn not_logged_in_fails_cleanly() {
 }
 
 #[test]
-fn missing_filename_fails_cleanly() {
+fn missing_path_fails_cleanly() {
     let tmp_dir = tempfile::tempdir().expect("tempdir");
 
-    let spx_bin = env!("CARGO_BIN_EXE_spx");
-    let output = Command::new(spx_bin)
-        .args(["run"])
+    let output = Command::new(spx_bin())
         .current_dir(tmp_dir.path())
         .env("HOME", tmp_dir.path())
         .output()
         .expect("run spx");
 
-    assert!(
-        !output.status.success(),
-        "spx run with no filename should fail"
-    );
+    assert!(!output.status.success(), "spx with no path should fail");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("FILENAME") || stderr.contains("required"),
-        "stderr should mention FILENAME; got:\n{stderr}"
+        stderr.contains("spx PATH") || stderr.contains("spx list"),
+        "stderr should mention the new command shape; got:\n{stderr}"
     );
+}
+
+#[test]
+fn deployment_commands_are_removed() {
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+
+    for command in ["run", "new", "kill", "ps", "logs", "env", "uv", "pub"] {
+        let output = Command::new(spx_bin())
+            .arg(command)
+            .current_dir(tmp_dir.path())
+            .env("HOME", tmp_dir.path())
+            .output()
+            .expect("run spx");
+
+        assert!(!output.status.success(), "spx {command} should fail");
+    }
+}
+
+#[test]
+fn help_shows_publishing_commands() {
+    let output = Command::new(spx_bin())
+        .arg("--help")
+        .output()
+        .expect("run spx");
+
+    assert!(output.status.success(), "spx --help should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("standalone HTML file"));
+    assert!(stdout.contains("create"));
+    assert!(stdout.contains("update"));
+    assert!(stdout.contains("delete"));
+    assert!(stdout.contains("list"));
+    assert!(!stdout.contains("  run "));
+    assert!(!stdout.contains("  new "));
 }

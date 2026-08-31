@@ -1,24 +1,12 @@
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 
-use crate::cli::{PubArgs, PubCommand, PubCreateArgs, PubDeleteArgs, PubUpdateArgs};
+use crate::cli::{PubCreateArgs, PubDeleteArgs, PubUpdateArgs};
 use crate::commands::api;
 use crate::credentials::Credentials;
 use crate::ui;
 
 const MAX_PUB_BYTES: u64 = 10 * 1024 * 1024;
-
-pub fn pub_cmd(args: PubArgs, verbose: bool) -> Result<()> {
-    match (args.command, args.path) {
-        (Some(PubCommand::Create(create_args)), None) => pub_create(create_args, verbose),
-        (Some(PubCommand::Update(update_args)), None) => pub_update(update_args, verbose),
-        (Some(PubCommand::Delete(delete_args)), None) => pub_delete(delete_args, verbose),
-        (Some(PubCommand::List), None) => pub_list(verbose),
-        (None, Some(path)) => pub_create(PubCreateArgs { path }, verbose),
-        (Some(_), Some(_)) => bail!("pass either `spx pub PATH` or a pub subcommand, not both"),
-        (None, None) => bail!("missing path. Use `spx pub PATH` or `spx pub list`."),
-    }
-}
 
 fn read_html_file(path: &Path) -> Result<(Vec<u8>, String)> {
     let meta = std::fs::metadata(path)
@@ -42,7 +30,7 @@ fn read_html_file(path: &Path) -> Result<(Vec<u8>, String)> {
     Ok((bytes, filename))
 }
 
-fn pub_create(args: PubCreateArgs, verbose: bool) -> Result<()> {
+pub fn create(args: PubCreateArgs, verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
     let (bytes, filename) = read_html_file(&args.path)?;
@@ -55,7 +43,7 @@ fn pub_create(args: PubCreateArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn pub_update(args: PubUpdateArgs, verbose: bool) -> Result<()> {
+pub fn update(args: PubUpdateArgs, verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
     let (bytes, filename) = read_html_file(&args.path)?;
@@ -72,7 +60,7 @@ fn pub_update(args: PubUpdateArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn pub_delete(args: PubDeleteArgs, verbose: bool) -> Result<()> {
+pub fn delete(args: PubDeleteArgs, verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
     if verbose {
@@ -87,7 +75,7 @@ fn pub_delete(args: PubDeleteArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn pub_list(verbose: bool) -> Result<()> {
+pub fn list(verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
     if verbose {
