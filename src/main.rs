@@ -26,5 +26,6 @@ fn main() -> Result<()> {
         Command::Uv(args) => commands::uv::uv(args, verbose),
         Command::Pub(args) => commands::pub_cmd::pub_cmd(args, verbose),
         Command::Feedback(args) => commands::feedback::feedback(args, verbose),
+        Command::Subscribe => commands::subscribe::subscribe(verbose),
     }
 }

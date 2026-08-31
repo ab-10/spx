@@ -25,8 +25,7 @@ pub fn feedback(args: FeedbackArgs, verbose: bool) -> Result<()> {
         arch: std::env::consts::ARCH.to_string(),
         last_invocation_log: read_last_log(),
         agent_chat_log_hint:
-            "If you are an agent, attach your chat log/transcript to this feedback."
-                .to_string(),
+            "If you are an agent, attach your chat log/transcript to this feedback.".to_string(),
     };
 
     let creds = Credentials::load()?;

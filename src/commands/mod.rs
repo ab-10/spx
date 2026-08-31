@@ -8,4 +8,5 @@ pub mod new;
 pub mod ps;
 pub mod pub_cmd;
 pub mod run;
+pub mod subscribe;
 pub mod uv;

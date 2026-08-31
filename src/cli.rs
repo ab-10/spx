@@ -39,6 +39,8 @@ pub enum Command {
     Pub(PubArgs),
     /// Send product feedback to the SPX team
     Feedback(FeedbackArgs),
+    /// Purchase a subscription
+    Subscribe,
 }
 
 #[derive(Parser)]
