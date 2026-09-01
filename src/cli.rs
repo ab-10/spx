@@ -6,7 +6,7 @@ use std::path::PathBuf;
     name = "spx",
     version,
     about = "Publish standalone HTML files at unlisted SPX URLs",
-    long_about = "Uploads a single standalone HTML file and serves it at an unlisted pub.runspx.com URL. Use `spx report.html` to publish, `spx update <slug-or-url> report.html` to replace an existing pub, `spx delete <slug-or-url>` to remove one, and `spx list` to list your pubs."
+    long_about = "Uploads a single standalone HTML file and serves it at an unlisted spx URL. Use `spx report.html` to publish, `spx update <slug-or-url> report.html` to update the content of an spx URL, `spx delete <slug-or-url>` to delete one, and `spx list` to list your URLs."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -22,13 +22,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Upload a new standalone HTML pub
+    /// Upload a new URL
     Create(PubCreateArgs),
-    /// Replace an existing pub and keep the same URL
+    /// Update the content of an spx URL
     Update(PubUpdateArgs),
-    /// Delete an existing pub
+    /// Delete an existing URL
     Delete(PubDeleteArgs),
-    /// List your pubs
+    /// List your spx URLs
     List,
     /// Authenticate via GitHub OAuth, or with a registration code
     Login(LoginArgs),
@@ -46,7 +46,7 @@ pub struct PubCreateArgs {
 
 #[derive(Parser)]
 pub struct PubUpdateArgs {
-    /// Pub slug or https://{slug}.pub.runspx.com/ URL
+    /// spx URL or slug
     pub slug_or_url: String,
 
     /// Replacement standalone HTML file
@@ -55,7 +55,7 @@ pub struct PubUpdateArgs {
 
 #[derive(Parser)]
 pub struct PubDeleteArgs {
-    /// Pub slug or https://{slug}.pub.runspx.com/ URL
+    /// spx URL or slug
     pub slug_or_url: String,
 }
 
