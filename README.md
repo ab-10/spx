@@ -9,7 +9,7 @@ spx login
 spx report.html
 ```
 
-Publishing prints a shareable URL like `https://abc123.pub.runspx.com/`.
+Publishing prints a shareable URL like `https://abc123.runspx.dev/`.
 
 ## Commands
 
@@ -37,7 +37,7 @@ Replaces an existing pub owned by the current account and keeps the same URL.
 
 ```bash
 spx update abc123 report-v2.html
-spx update https://abc123.pub.runspx.com/ report-v2.html
+spx update https://abc123.runspx.dev/ report-v2.html
 ```
 
 ### `spx delete <slug-or-url>`
