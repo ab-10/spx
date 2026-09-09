@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use std::path::Path;
 
 use crate::cli::{PubCreateArgs, PubDeleteArgs, PubUpdateArgs};
-use crate::commands::api;
+use crate::commands::{api, subscribe};
 use crate::credentials::Credentials;
 use crate::ui;
 
@@ -30,6 +30,13 @@ fn read_html_file(path: &Path) -> Result<(Vec<u8>, String)> {
     Ok((bytes, filename))
 }
 
+fn auto_subscribe_requested(args: &PubCreateArgs) -> bool {
+    args.subscribe
+        || std::env::var("SPX_AUTO_SUBSCRIBE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+}
+
 pub fn create(args: PubCreateArgs, verbose: bool) -> Result<()> {
     let creds = Credentials::require()?;
     let api_url = api::api_url();
@@ -38,7 +45,28 @@ pub fn create(args: PubCreateArgs, verbose: bool) -> Result<()> {
         ui::verbose(&format!("POST {}/pub", api_url.trim_end_matches('/')));
         ui::verbose(&format!("File size: {} bytes", bytes.len()));
     }
-    let resp = api::pub_create(&api_url, &creds.token, &bytes, &filename)?;
+
+    let resp = match api::pub_create(&api_url, &creds.token, &bytes, &filename) {
+        Ok(resp) => resp,
+        Err(err) => {
+            let Some(payment) = err.downcast_ref::<api::PaymentRequired>() else {
+                return Err(err);
+            };
+            // Never prompt: agents and CI run this non-interactively. Either the
+            // caller opted in to checkout up front, or we print the next command.
+            if !auto_subscribe_requested(&args) {
+                ui::warn(&payment.to_string());
+                bail!(
+                    "publishing requires an active subscription. Run `spx subscribe`, \
+                     then publish again (or re-run with `--subscribe`)."
+                );
+            }
+            ui::info("Subscription required — starting checkout.");
+            subscribe::subscribe(verbose)?;
+            api::pub_create(&api_url, &creds.token, &bytes, &filename)?
+        }
+    };
+
     println!("{}", resp.url);
     Ok(())
 }

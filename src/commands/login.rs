@@ -141,7 +141,13 @@ pub fn login_with_code(code: &str, verbose: bool) -> Result<()> {
     let resp: TokenResponse = match ureq::post(&url).send_json(serde_json::json!({ "code": code }))
     {
         Ok(r) => r.into_json().context("parsing /auth/code response")?,
-        Err(ureq::Error::Status(401, _)) => bail!("Invalid registration code."),
+        Err(ureq::Error::Status(401, r)) => {
+            let body = r.into_string().unwrap_or_default();
+            match api::parse_error_body(&body) {
+                Some(detail) => bail!("{detail}"),
+                None => bail!("Invalid or expired login code."),
+            }
+        }
         Err(ureq::Error::Status(503, _)) => {
             bail!("Code-based auth is not enabled on this control plane.")
         }

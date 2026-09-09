@@ -80,3 +80,31 @@ fn help_shows_publishing_commands() {
     assert!(!stdout.contains("  run "));
     assert!(!stdout.contains("  new "));
 }
+
+#[test]
+fn create_accepts_subscribe_flag() {
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        tmp_dir.path().join("report.html"),
+        "<!doctype html><html></html>",
+    )
+    .unwrap();
+
+    let output = Command::new(spx_bin())
+        .args(["create", "report.html", "--subscribe"])
+        .current_dir(tmp_dir.path())
+        .env("HOME", tmp_dir.path())
+        .output()
+        .expect("run spx");
+
+    // Not logged in, so it still fails - but on credentials, not on arg parsing.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument"),
+        "--subscribe should be a valid flag; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("spx login"),
+        "stderr should ask the user to log in; got:\n{stderr}"
+    );
+}

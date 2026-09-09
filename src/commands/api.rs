@@ -65,6 +65,19 @@ pub struct BillingStatusResponse {
     pub current_period_end: Option<String>,
 }
 
+/// A 402 from the control plane: the account has no active subscription.
+/// Typed so callers can offer the subscribe path instead of just printing.
+#[derive(Debug)]
+pub struct PaymentRequired(pub String);
+
+impl std::fmt::Display for PaymentRequired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for PaymentRequired {}
+
 pub fn pub_create(
     api_url: &str,
     token: &str,
@@ -81,6 +94,12 @@ pub fn pub_create(
         Ok(resp) => resp.into_json().context("parsing pub create response"),
         Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
             bail!("session invalid or expired. Run `spx login` to re-authenticate.")
+        }
+        Err(ureq::Error::Status(402, resp)) => {
+            let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());
+            let detail = parse_error_body(&body)
+                .unwrap_or_else(|| "active subscription required.".to_string());
+            Err(anyhow::Error::new(PaymentRequired(detail)))
         }
         Err(ureq::Error::Status(code, resp)) => {
             let body = resp.into_string().unwrap_or_else(|_| "<no body>".into());

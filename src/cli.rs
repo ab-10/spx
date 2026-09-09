@@ -42,6 +42,11 @@ pub enum Command {
 pub struct PubCreateArgs {
     /// Standalone HTML file to publish
     pub path: PathBuf,
+
+    /// If publishing is blocked by billing, start checkout and retry once.
+    /// Also enabled by setting SPX_AUTO_SUBSCRIBE=1.
+    #[arg(long)]
+    pub subscribe: bool,
 }
 
 #[derive(Parser)]
@@ -71,7 +76,7 @@ pub struct FeedbackArgs {
 
 #[derive(Parser)]
 pub struct LoginArgs {
-    /// Redeem a registration code to bypass GitHub OAuth
+    /// Redeem a login code from runspx.com/install, or a registration code
     #[arg(long)]
     pub code: Option<String>,
 }
