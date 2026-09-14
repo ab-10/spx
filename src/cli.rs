@@ -34,19 +34,12 @@ pub enum Command {
     Login(LoginArgs),
     /// Send product feedback to the SPX team
     Feedback(FeedbackArgs),
-    /// Purchase a subscription
-    Subscribe,
 }
 
 #[derive(Parser)]
 pub struct PubCreateArgs {
     /// Standalone HTML file to publish
     pub path: PathBuf,
-
-    /// If publishing is blocked by billing, start checkout and retry once.
-    /// Also enabled by setting SPX_AUTO_SUBSCRIBE=1.
-    #[arg(long)]
-    pub subscribe: bool,
 }
 
 #[derive(Parser)]

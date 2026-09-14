@@ -65,14 +65,6 @@ spx login
 spx login --code CODE
 ```
 
-### `spx subscribe`
-
-Starts Stripe Checkout for an SPX subscription and waits for activation.
-
-```bash
-spx subscribe
-```
-
 ### `spx feedback <message|->`
 
 Sends product feedback in a single non-interactive command.

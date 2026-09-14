@@ -21,14 +21,7 @@ fn main() -> Result<()> {
             None => commands::login::login(verbose),
         },
         (Some(Command::Feedback(args)), None) => commands::feedback::feedback(args, verbose),
-        (Some(Command::Subscribe), None) => commands::subscribe::subscribe(verbose),
-        (None, Some(path)) => commands::pub_cmd::create(
-            PubCreateArgs {
-                path,
-                subscribe: false,
-            },
-            verbose,
-        ),
+        (None, Some(path)) => commands::pub_cmd::create(PubCreateArgs { path }, verbose),
         (Some(_), Some(_)) => anyhow::bail!("pass either `spx PATH` or a subcommand, not both"),
         (None, None) => anyhow::bail!("missing path. Use `spx PATH` or `spx list`."),
     }
